@@ -1,0 +1,31 @@
+# 비공개 자료: 대회 전략, 학습 노트, 회고 (공개 저장소에 올리지 않음)
+docs/private/
+
+# 비밀값
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+*credentials*
+
+# 실행 로그 (요청 원문, 도구 응답 전문이 들어감)
+logs/
+*.jsonl
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+.pytest_cache/
+
+# Node
+node_modules/
+dist/
+build/
+.vite/
+
+# OS, 편집기
+.DS_Store
+.idea/
+.vscode/
