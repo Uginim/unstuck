@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Your workshop · Daybreak</title>
+<link rel="stylesheet" href="../static/daybreak.css">
+<script src="../static/preview.js" defer>
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to request</a>
+<div class="preview">Layout preview · Synthetic order · No model or payment calls</div>
+<div class="shell">
+<header>
+<a class="brand" href="operator.html">
+<span aria-hidden="true">◒</span>daybreak</a>
+<nav aria-label="Preview pages">
+<a href="operator.html">Overview</a>
+<a href="customer.html" aria-current="page">Customer view</a>
+</nav>
+</header>
+<main id="main" class="customer">
+<p class="eyebrow">Maya's studio / mock-order-01</p>
+<h1>Plans changed?</h1>
+<p>Tell Maya what you need. You will review the request before it is submitted.</p>
+<dl class="receipt">
+<div>
+<dt>Workshop</dt>
+<dd>Watercolor Basics</dd>
+</div>
+<div>
+<dt>Starts</dt>
+<dd>Nov 15, 2026 · 12:00 UTC</dd>
+</div>
+<div>
+<dt>Paid</dt>
+<dd>$39.00 USD</dd>
+</div>
+</dl>
+<section class="panel" aria-labelledby="message-title">
+<h2 id="message-title">Your message</h2>
+<label for="message">How can we help?</label>
+<textarea id="message" aria-describedby="message-hint">I can't make the workshop. Please cancel my booking and refund it.</textarea>
+<p id="message-hint" class="hint">Preview only: your text stays in this page. The next screen illustrates a fixed refund example; no AI reads this message.</p>
+<button type="button" data-preview-review>Preview confirmation</button>
+</section>
+<section id="confirmation" class="panel" hidden tabindex="-1" aria-labelledby="confirmation-title">
+<p class="eyebrow">Fixed example / Not an AI interpretation</p>
+<h2 id="confirmation-title">Review your refund request</h2>
+<p>Request a full <strong>$39.00 USD</strong> refund for <strong>Watercolor Basics, November 15</strong>.</p>
+<p>The order sets the amount and workshop. A submitted request is checked against the refund policy and the seller's permission.</p>
+<div class="actions">
+<button type="button" data-preview-confirm>Confirm example request</button>
+<button type="button" class="secondary" data-edit-message>Go back and edit</button>
+</div>
+<p class="hint">Only asking a question? Go back and edit. Editing requires a new confirmation.</p>
+<p id="confirmation-status" role="status" class="status">
+</p>
+</section>
+<p class="hint" style="margin-top:24px">In the connected app, anyone holding the valid order link can manage this order. Keep the link private.</p>
+</main>
+<footer>Fictional order. No request is saved and no refund is sent from this preview.</footer>
+</div>
+</body>
+</html>

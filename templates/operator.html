@@ -1,0 +1,158 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Morning overview · Daybreak</title>
+<link rel="stylesheet" href="../static/daybreak.css">
+<script src="../static/preview.js" defer>
+</script>
+</head>
+<body>
+<a class="skip" href="#main">Skip to overview</a>
+<div class="preview">Layout preview · Synthetic records · No model or payment calls</div>
+<div class="shell">
+<header>
+<a class="brand" href="operator.html">
+<span aria-hidden="true">◒</span>daybreak</a>
+<nav aria-label="Preview pages">
+<a href="operator.html" aria-current="page">Overview</a>
+<a href="customer.html">Customer view</a>
+</nav>
+</header>
+<main id="main">
+<p class="eyebrow">Maya's studio / Morning overview</p>
+<h1>A little less to wake up to.</h1>
+<p class="muted">Two refunds resolved within your limits. One needs your approval.</p>
+<section class="summary" aria-label="Refund totals">
+<div class="metric">
+<strong>$88</strong>
+<span>Automatically completed</span>
+</div>
+<div class="metric">
+<strong>$29</strong>
+<span>Needs your approval</span>
+</div>
+<div class="metric">
+<strong>$0</strong>
+<span>Manually completed</span>
+</div>
+</section>
+<div class="layout">
+<section aria-labelledby="requests-title">
+<h2 id="requests-title">Your refund requests</h2>
+<details class="case" open>
+<summary>
+<span class="case-heading">
+<span>Sketching the Everyday</span>
+<span>$29.00</span>
+</span>
+<span class="case-meta">
+<span class="badge waiting">Needs approval</span> · mock-order-03</span>
+</summary>
+<div class="evidence">
+<p class="notice">Eligible for a refund. Beyond the remaining automatic allowance of $12.</p>
+<dl>
+<dt>Customer requested</dt>
+<dd>Full refund, confirmed before the cancellation deadline.</dd>
+<dt>Seller allowed</dt>
+<dd>Up to $50 per refund, $100 total. $88 already used under policy v3.</dd>
+<dt>PayPal confirmed</dt>
+<dd>No refund submitted. Waiting for your decision.</dd>
+</dl>
+<button type="button" data-preview-approval>Preview approval</button>
+<p class="hint">A real approval rechecks the confirmed request and current transaction first.</p>
+<div id="approval-preview" hidden tabindex="-1">
+<h3>After a successful manual refund</h3>
+<p>Automatic $88, manual $29, total completed $117. Automatic allowance remains $12.</p>
+<p class="muted">Illustration only. This action did not submit a refund or change any record.</p>
+<button class="secondary" type="button" data-close-approval>Close illustration</button>
+</div>
+</div>
+</details>
+<details class="case">
+<summary>
+<span class="case-heading">
+<span>Watercolor Basics</span>
+<span>$39.00</span>
+</span>
+<span class="case-meta">
+<span class="badge">Completed automatically</span> · mock-order-01</span>
+</summary>
+<div class="evidence">
+<dl>
+<dt>Customer requested</dt>
+<dd>Full refund of $39, confirmed on November 8.</dd>
+<dt>Seller allowed</dt>
+<dd>Policy v3, within $50 per refund and $100 total.</dd>
+<dt>PayPal confirmed — simulated</dt>
+<dd>Completed · mock-refund-01</dd>
+</dl>
+<p class="hint">A repeated request links to this refund; it does not create another.</p>
+</div>
+</details>
+<details class="case">
+<summary>
+<span class="case-heading">
+<span>Color &amp; Light</span>
+<span>$49.00</span>
+</span>
+<span class="case-meta">
+<span class="badge">Completed automatically</span> · mock-order-02</span>
+</summary>
+<div class="evidence">
+<dl>
+<dt>Customer requested</dt>
+<dd>Full refund of $49, confirmed on November 8.</dd>
+<dt>Seller allowed</dt>
+<dd>$39 used + $49 requested = $88 of $100.</dd>
+<dt>PayPal confirmed — simulated</dt>
+<dd>Completed · mock-refund-02</dd>
+</dl>
+</div>
+</details>
+<details class="case">
+<summary>How an unconfirmed result appears</summary>
+<div class="evidence">
+<span class="badge unknown">Result unconfirmed</span>
+<p class="hint">Separate state example, excluded from the totals above.</p>
+<p>We could not establish the payment result. Its reserved amount stays held while the result is checked. It is not marked completed or failed.</p>
+<p class="muted">A fresh refund must not be submitted for this capture.</p>
+</div>
+</details>
+</section>
+<aside class="authority" aria-labelledby="authority-title">
+<p class="eyebrow">Your automatic allowance</p>
+<h2 id="authority-title">Permission has limits.</h2>
+<dl>
+<div>
+<dt>Per refund</dt>
+<dd>$50</dd>
+</div>
+<div>
+<dt>Total allowed</dt>
+<dd>$100</dd>
+</div>
+<div>
+<dt>Completed + reserved</dt>
+<dd>$88</dd>
+</div>
+<div>
+<dt>Remaining</dt>
+<dd>$12</dd>
+</div>
+<div>
+<dt>Expires</dt>
+<dd>Nov 8, 08:00 UTC</dd>
+</div>
+</dl>
+<p class="hint">Illustrated at 07:00 UTC. Policy v3 allows full refunds until 24 hours before a workshop starts. Reserved and unconfirmed amounts count toward the limit.</p>
+<button type="button" disabled>Stop automatic refunds</button>
+<p class="hint">Control available after service and seller authentication are connected.</p>
+</aside>
+</div>
+</main>
+<footer>Daybreak · PayPal refunds within your limits. Fictional merchant and synthetic records.</footer>
+</div>
+</body>
+</html>
