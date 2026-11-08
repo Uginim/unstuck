@@ -1,0 +1,566 @@
+{
+  "version": 1,
+  "status": "draft_expected_results_not_execution_results",
+  "scope": "24 synthetic operational scenarios; extraction adversarial cases authored independently are supplemental and reported separately",
+  "defaults": {
+    "currency": "USD",
+    "amount_cents": 3900,
+    "kind": "refund",
+    "ambiguous": false,
+    "received_at": "2026-11-08T01:00:00Z",
+    "evaluated_at": "2026-11-08T01:00:00Z",
+    "session_starts_at": "2026-11-15T12:00:00Z",
+    "cutoff_hours": 24,
+    "per_refund_limit_cents": 5000,
+    "total_limit_cents": 10000,
+    "expires_at": "2026-11-08T08:00:00Z",
+    "held_cents": 0,
+    "actor": "agent",
+    "capture_status": "COMPLETED",
+    "existing_job": null,
+    "adapter_result": "completed"
+  },
+  "conventions": [
+    "Amounts are integer USD cents; changing amount changes matching order and confirmed amount unless explicitly mismatched",
+    "Each scenario starts isolated; variants run separately and are not extra scenario successes",
+    "outcome is end-to-end observable state, not necessarily domain.Outcome; boundary reasons outside domain are semantic expectations pending service error contract",
+    "refund_calls counts writes at adapter entry including failures, not successful transfers; capture/refund reads are excluded",
+    "Concurrency and recovery require real SQLite connections and persisted state; no in-memory-only proof",
+    "No model or payment provider call is performed by this catalog"
+  ],
+  "acceptance": {
+    "forbidden_refund_calls": 0,
+    "required_scenarios_passed": 24,
+    "normal_auto_cases": [
+      "01",
+      "02",
+      "05"
+    ],
+    "normal_auto_expected": "3/3",
+    "waiting_reason_accuracy": "All pending checkpoints must match their explicit reason",
+    "critical_failures": "Any unauthorized write, duplicate remote refund, overspent limit, lost unknown hold, or false completion fails the suite",
+    "reporting": "Report scenario and variant denominators, actual vs mock separately; skipped cases never count as passes"
+  },
+  "cases": [
+    {
+      "id": "01",
+      "title": "Eligible full refund",
+      "setup": {},
+      "steps": [
+        "confirm",
+        "execute",
+        "reconcile"
+      ],
+      "expected": {
+        "outcome": "completed",
+        "reason": "ok",
+        "refund_calls": 1,
+        "invariants": [
+          "One capture job and one persisted attempt before network call",
+          "Automatic completed 3900, held 3900"
+        ]
+      }
+    },
+    {
+      "id": "02",
+      "title": "Inclusive policy cutoff",
+      "setup": {
+        "received_at": "2026-11-14T12:00:00Z"
+      },
+      "steps": [
+        "confirm",
+        "execute"
+      ],
+      "expected": {
+        "outcome": "completed",
+        "reason": "ok",
+        "refund_calls": 1,
+        "invariants": [
+          "Exactly 24 hours before session is eligible"
+        ]
+      }
+    },
+    {
+      "id": "03",
+      "title": "Past policy cutoff",
+      "setup": {
+        "received_at": "2026-11-14T12:00:00.000001Z"
+      },
+      "steps": [
+        "confirm"
+      ],
+      "expected": {
+        "outcome": "rejected_policy",
+        "reason": "outside_window",
+        "refund_calls": 0,
+        "invariants": [
+          "No job or reservation"
+        ]
+      }
+    },
+    {
+      "id": "04",
+      "title": "Confirmation timestamp, not draft timestamp",
+      "setup": {
+        "draft_at": "2026-11-14T11:59:00Z",
+        "received_at": "2026-11-14T12:00:01Z"
+      },
+      "steps": [
+        "submit_before_cutoff",
+        "confirm_after_cutoff"
+      ],
+      "expected": {
+        "outcome": "rejected_policy",
+        "reason": "outside_window",
+        "refund_calls": 0,
+        "invariants": [
+          "Server confirmation receipt determines cutoff"
+        ]
+      }
+    },
+    {
+      "id": "05",
+      "title": "Exact per-refund and total cap",
+      "setup": {
+        "amount_cents": 5000,
+        "held_cents": 5000
+      },
+      "steps": [
+        "confirm",
+        "execute"
+      ],
+      "expected": {
+        "outcome": "completed",
+        "reason": "ok",
+        "refund_calls": 1,
+        "invariants": [
+          "Held becomes 10000, never exceeds limit"
+        ]
+      }
+    },
+    {
+      "id": "06",
+      "title": "Per-refund cap exceeded",
+      "setup": {
+        "amount_cents": 5001
+      },
+      "steps": [
+        "confirm"
+      ],
+      "expected": {
+        "outcome": "pending_approval",
+        "reason": "over_per_refund",
+        "refund_calls": 0,
+        "invariants": [
+          "No job or reservation"
+        ]
+      }
+    },
+    {
+      "id": "07",
+      "title": "Morning sequence and manual approval",
+      "setup": {
+        "amounts_cents": [
+          3900,
+          4900,
+          2900
+        ]
+      },
+      "steps": [
+        "execute_first_two",
+        "confirm_third",
+        "seller_approve_third"
+      ],
+      "expected": {
+        "outcome": "completed",
+        "reason": "ok",
+        "refund_calls": 3,
+        "invariants": [
+          "Third request initially pending_approval/over_total with zero calls and no job",
+          "Automatic completed 8800, manual completed 2900, remaining 1200, total completed 11700",
+          "Seller revalidates confirmed version and current capture"
+        ]
+      }
+    },
+    {
+      "id": "08",
+      "title": "Reservations consume total cap",
+      "setup": {
+        "held_cents": 8800,
+        "held_state_variants": [
+          "reserved",
+          "executing",
+          "paypal_pending",
+          "unknown",
+          "completed"
+        ],
+        "amount_cents": 2900
+      },
+      "steps": [
+        "confirm_each_variant_in_isolated_database"
+      ],
+      "expected": {
+        "outcome": "pending_approval",
+        "reason": "over_total",
+        "refund_calls": 0,
+        "invariants": [
+          "Each variant blocks execution without releasing prior hold"
+        ]
+      }
+    },
+    {
+      "id": "09",
+      "title": "Expiry uses evaluation time",
+      "setup": {
+        "received_at": "2026-11-08T07:59:00Z",
+        "evaluated_at": "2026-11-08T08:00:00Z"
+      },
+      "steps": [
+        "confirm",
+        "evaluate"
+      ],
+      "expected": {
+        "outcome": "pending_approval",
+        "reason": "delegation_expired",
+        "refund_calls": 0,
+        "invariants": [
+          "Exactly at expiry is expired despite earlier confirmation"
+        ]
+      }
+    },
+    {
+      "id": "10",
+      "title": "Stopped delegation",
+      "setup": {
+        "stopped_at": "2026-11-08T00:59:00Z"
+      },
+      "steps": [
+        "confirm"
+      ],
+      "expected": {
+        "outcome": "pending_approval",
+        "reason": "delegation_stopped",
+        "refund_calls": 0,
+        "invariants": [
+          "Eligible policy does not override stop"
+        ]
+      }
+    },
+    {
+      "id": "11",
+      "title": "No delegation",
+      "setup": {
+        "delegation": null
+      },
+      "steps": [
+        "confirm"
+      ],
+      "expected": {
+        "outcome": "pending_approval",
+        "reason": "no_delegation",
+        "refund_calls": 0,
+        "invariants": [
+          "No automatic reservation"
+        ]
+      }
+    },
+    {
+      "id": "12",
+      "title": "Policy precedes seller authority",
+      "setup": {
+        "received_at": "2026-11-14T12:00:01Z",
+        "actor": "seller"
+      },
+      "steps": [
+        "seller_approve"
+      ],
+      "expected": {
+        "outcome": "rejected_policy",
+        "reason": "outside_window",
+        "refund_calls": 0,
+        "invariants": [
+          "Seller cannot bypass policy cutoff"
+        ]
+      }
+    },
+    {
+      "id": "13",
+      "title": "Duplicate confirmation and new inquiry",
+      "setup": {},
+      "steps": [
+        "confirm_and_complete",
+        "repeat_same_confirmation",
+        "confirm_new_draft_same_capture"
+      ],
+      "expected": {
+        "outcome": "link_existing",
+        "reason": "already_refunded",
+        "refund_calls": 1,
+        "invariants": [
+          "One capture job, one refund, original refund ID returned",
+          "No duplicate spending"
+        ]
+      }
+    },
+    {
+      "id": "14",
+      "title": "Same capture race",
+      "setup": {},
+      "steps": [
+        "concurrent_confirmations_separate_database_connections"
+      ],
+      "expected": {
+        "outcome": "completed",
+        "reason": "ok",
+        "refund_calls": 1,
+        "invariants": [
+          "One job wins SQLite reservation",
+          "Both responses link to same job or report in_progress",
+          "No database lock held during adapter await"
+        ]
+      }
+    },
+    {
+      "id": "15",
+      "title": "Different captures compete for remaining budget",
+      "setup": {
+        "amounts_cents": [
+          4900,
+          4900
+        ],
+        "held_cents": 3900
+      },
+      "steps": [
+        "concurrent_confirmations_separate_database_connections"
+      ],
+      "expected": {
+        "outcome": "mixed",
+        "reason": "ok|over_total",
+        "refund_calls": 1,
+        "invariants": [
+          "One completed, one pending_approval/over_total",
+          "Final held 8800, winner identity not prescribed"
+        ]
+      }
+    },
+    {
+      "id": "16",
+      "title": "Stale confirmation version",
+      "setup": {
+        "current_draft_version": 2,
+        "submitted_draft_version": 1
+      },
+      "steps": [
+        "edit_draft",
+        "confirm_old_version"
+      ],
+      "expected": {
+        "outcome": "blocked",
+        "reason": "stale_confirmation",
+        "refund_calls": 0,
+        "invariants": [
+          "No confirmed request for obsolete version, no job",
+          "Customer must review current server-filled amount and session"
+        ]
+      }
+    },
+    {
+      "id": "17",
+      "title": "Order and seller authorization boundaries",
+      "setup": {
+        "variants": [
+          "missing_link",
+          "expired_link",
+          "tampered_link",
+          "different_order_draft",
+          "unauthenticated_seller",
+          "client_actor_seller"
+        ]
+      },
+      "steps": [
+        "attempt_each_variant_in_isolation"
+      ],
+      "expected": {
+        "outcome": "blocked",
+        "reason": "unauthorized",
+        "refund_calls": 0,
+        "invariants": [
+          "No protected case disclosure, confirmation, approval or reservation",
+          "HTTP layer resolves authority before service invocation"
+        ]
+      }
+    },
+    {
+      "id": "18",
+      "title": "Definite failure allows validated retry",
+      "setup": {
+        "adapter_results": [
+          "failed_definite",
+          "completed"
+        ]
+      },
+      "steps": [
+        "confirm",
+        "execute",
+        "retry_after_revalidation"
+      ],
+      "expected": {
+        "outcome": "completed",
+        "reason": "ok",
+        "refund_calls": 2,
+        "invariants": [
+          "First failure releases its reservation",
+          "One capture job, two retained attempts, distinct attempt keys",
+          "Retry reserves once and rechecks policy and limits"
+        ]
+      }
+    },
+    {
+      "id": "19",
+      "title": "Remote pending is not completed",
+      "setup": {
+        "adapter_results": [
+          "pending"
+        ],
+        "reconcile_result": "pending"
+      },
+      "steps": [
+        "confirm",
+        "execute",
+        "reconcile"
+      ],
+      "expected": {
+        "outcome": "paypal_pending",
+        "reason": "in_progress",
+        "refund_calls": 1,
+        "invariants": [
+          "Refund ID retained, 3900 reserved, completed total zero",
+          "Repeated inquiry links existing job and sends no new refund"
+        ]
+      }
+    },
+    {
+      "id": "20",
+      "title": "Response lost after remote application",
+      "setup": {
+        "adapter_results": [
+          "unknown"
+        ],
+        "remote_applied": true
+      },
+      "steps": [
+        "confirm",
+        "execute",
+        "repeat_inquiry",
+        "retry_same_attempt_if_supported"
+      ],
+      "expected": {
+        "outcome": "unknown",
+        "reason": "result_unconfirmed",
+        "refund_calls": {
+          "min": 1,
+          "max": 2
+        },
+        "invariants": [
+          "3900 remains held until independently confirmed",
+          "No new key or changed body; one remote refund maximum",
+          "Outside idempotency retention do not auto-retry",
+          "Unknown never reported as completed"
+        ]
+      }
+    },
+    {
+      "id": "21",
+      "title": "Restart with committed execution",
+      "setup": {
+        "initial_job_state": "executing"
+      },
+      "steps": [
+        "close_database",
+        "restart_with_same_database",
+        "reconcile"
+      ],
+      "expected": {
+        "outcome": "reconciliation_required",
+        "reason": "result_unconfirmed",
+        "refund_calls": 0,
+        "invariants": [
+          "Existing reservation and attempt key survive",
+          "No new refund request during startup; unresolved result retains hold"
+        ]
+      }
+    },
+    {
+      "id": "22",
+      "title": "Restore pauses automatic execution",
+      "setup": {
+        "restored_database": true
+      },
+      "steps": [
+        "restore",
+        "submit_other_eligible_request"
+      ],
+      "expected": {
+        "outcome": "blocked",
+        "reason": "restore_reconciliation_required",
+        "refund_calls": 0,
+        "invariants": [
+          "Automatic execution paused until explicit reconciliation",
+          "Capture lookup alone cannot invent a lost refund ID"
+        ]
+      }
+    },
+    {
+      "id": "23",
+      "title": "Unusable extraction or facts",
+      "setup": {
+        "variants": [
+          "invalid_model_output",
+          "model_timeout",
+          "ambiguous_request",
+          "question",
+          "amount_mismatch",
+          "non_usd",
+          "capture_missing",
+          "capture_not_completed"
+        ]
+      },
+      "steps": [
+        "submit_and_confirm_each_variant_in_isolation"
+      ],
+      "expected": {
+        "outcome": "needs_review",
+        "reason": "variant_specific",
+        "refund_calls": 0,
+        "invariants": [
+          "No reservation or refund",
+          "Ambiguity maps to ambiguous_request, question to not_refund_request, amount/currency to insufficient_order_facts",
+          "Provider failures must show recoverable error or review, never an actionable invented refund"
+        ]
+      }
+    },
+    {
+      "id": "24",
+      "title": "Seller approval rechecks changed transaction",
+      "setup": {
+        "capture_changed_after_pending": true,
+        "amount_cents": 2900,
+        "held_cents": 8800
+      },
+      "steps": [
+        "confirm_pending",
+        "remote_capture_becomes_fully_refunded",
+        "seller_approve"
+      ],
+      "expected": {
+        "outcome": "blocked",
+        "reason": "already_refunded",
+        "refund_calls": 0,
+        "invariants": [
+          "No new refund despite seller authority",
+          "Display current verified facts; never fabricate a local refund ID"
+        ]
+      }
+    }
+  ]
+}
