@@ -99,3 +99,24 @@ async def test_timeline_sorted_escaped_and_progressive(web,monkeypatch):
     assert 'src="/static/timeline.js"' in response.text
     assert 'unsafe-inline' not in response.headers['content-security-policy']
     assert (await c.get('/static/timeline.js')).status_code==200
+
+
+@pytest.mark.parametrize('mode,turns,conversations',[('dummy',0,0),('dummy',4,2),('sandbox',0,0),('sandbox',4,2),('sandbox',1,0)])
+async def test_ai_cost_measured_only_and_seller_only(web,monkeypatch,mode,turns,conversations):
+    from daybreak.ports import AiUsage
+    c,w=web
+    c._transport.app.state.paypal_mode=mode  # label only; payments still use the injected dummy transport
+    monkeypatch.setattr(w.service,'ai_usage',lambda:AiUsage('synthetic-model',conversations,turns,1200,300,123456))
+    seller(c)
+    response=await c.get('/seller')
+    assert response.status_code==200
+    panel=response.text.split('aria-labelledby="ai-cost-title"',1)[1].split('</section>',1)[0]
+    assert 'AI cost' in panel and '1200' in panel and '300' in panel and 'synthetic-model' in panel
+    assert ('No measured model calls' in panel)==(turns==0)
+    if mode=='dummy' or turns==0:
+        assert '$' not in panel and 'Measured total cost' not in panel
+    else:
+        assert '$0.123456' in panel
+        assert ('$0.061728' in panel) if conversations else ('Not available' in panel)
+    customer=await c.get('/order/'+token())
+    assert 'AI cost' not in customer.text and 'synthetic-model' not in customer.text

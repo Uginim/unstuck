@@ -18,6 +18,7 @@ from .ports import InvalidInput, InvalidState, NotFound, RefundService, StaleVer
 ROOT = Path(__file__).resolve().parent.parent
 views = Jinja2Templates(directory=ROOT / 'templates')
 views.env.filters['usd'] = lambda cents: f'${cents // 100}.{cents % 100:02d}'
+views.env.filters['micro_usd'] = lambda amount, count=1: f'${Decimal(amount) / Decimal(1000000) / Decimal(count):.6f}'
 
 SELLER_REASONS = {
     'ok': 'The request met the refund policy and the required permission.',
@@ -241,7 +242,7 @@ async def logout(data=Depends(form)):
 async def dashboard(request: Request, svc=Depends(service)):
     return render(request, 'dashboard.html', summary=svc.morning_summary(), cases=svc.list_cases(),
                   delegation=svc.latest_delegation(), auto_paused=svc.auto_paused(),
-                  timeline=sorted(svc.timeline(), key=lambda event: event.at))
+                  timeline=sorted(svc.timeline(), key=lambda event: event.at), ai_usage=svc.ai_usage())
 
 
 @router.get('/seller/cases/{request_id}', dependencies=[Depends(require_seller)])

@@ -16,3 +16,6 @@ Conversation UI uses `converse` and `choose`. Only service-provided `Conversatio
 The morning timeline renders the service events chronologically on the server. An external same-origin script provides optional replay/pause/show-all controls with no network calls, preserving the existing CSP. Without JavaScript the entire list remains visible. Booking moved/kept records explicitly say no refund was sent.
 
 Phone CSS review: 320–420px uses a single-column summary, wrapping navigation/buttons and long conversation/event text; all grid children can shrink. Browser-host inventory currently fails with “The browser access host is unavailable”, so actual phone rendering and keyboard playback remain unverified. The replay logic has dependency-free Node tests: `node --test tests/timeline.test.cjs`.
+
+
+The seller-only AI cost panel reads `ai_usage()`. Conversations are the average-cost denominator; micro-USD values are formatted without floating-point conversion. Zero measured turns show “No measured model calls”. Dummy mode suppresses all cost amounts even if usage exists. The API returns one reported model name; the UI does not infer a per-model breakdown.

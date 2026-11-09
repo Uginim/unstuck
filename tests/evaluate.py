@@ -34,7 +34,8 @@ lines = [
     '## Failures', '',
 ]
 lines.extend(f'- `{item.get("name")}`' for item in failed)
-if not failed: lines.append('None.')
+if http_run.returncode: lines.append('- Local HTTP smoke failed; see the subprocess output. The baseline app must inject an AgentPort for conversation routes.')
+if not failed and not http_run.returncode: lines.append('None.')
 lines += ['', '## Limits', '',
           'This run tests the real service and adapter against a synthetic HTTP transport. '
           'It does not validate actual PayPal behavior, credentials, model accuracy, browser layout or deployment. '
