@@ -27,7 +27,7 @@ async def test_ko_options_only_from_contract_and_suggestion(web,monkeypatch):
     monkeypatch.setattr(w.service,'converse',call)
     link,response=await conversation(c,'일정을 바꾸고 싶어요')
     assert '<html lang="ko">' in response.text
-    assert 'AI reply' in response.text and '답변을 교체했습니다' in response.text
+    assert 'AI 답변' in response.text and '답변을 교체했습니다' in response.text
     assert '일정 변경 확정' in response.text and '예약 유지' in response.text
     assert '환불 요청 확정' not in response.text
     assert 'option suggested' in response.text and 'AI 제안' in response.text
@@ -120,3 +120,77 @@ async def test_ai_cost_measured_only_and_seller_only(web,monkeypatch,mode,turns,
         assert ('$0.061728' in panel) if conversations else ('Not available' in panel)
     customer=await c.get('/order/'+token())
     assert 'AI cost' not in customer.text and 'synthetic-model' not in customer.text
+
+
+@pytest.mark.parametrize('language',['en','ko'])
+async def test_move_deadline_notice_and_new_date(web,monkeypatch,language):
+    c,w=web
+    starts=NOW+timedelta(days=10)
+    w.sql('INSERT INTO sessions VALUES (?,?,?,?)',('ui2-session','Synthetic workshop a',starts.isoformat(),1))
+    async def respond(*args):
+        return AgentTurn('other',False,'Change booking','가능한 일정을 선택하세요.' if language=='ko' else 'Choose a date.',language,'move:ui2-session')
+    monkeypatch.setattr(w.service._agent,'respond',respond)
+    link,response=await conversation(c)
+    notice=('옮겨도 환불 기한은 원래 회차 기준입니다.' if language=='ko' else
+            'Moving your booking does not change the refund deadline: it stays based on the original session.')
+    assert notice in response.text
+    assert 'aria-describedby="move-rule-' in response.text
+    if language=='ko':
+        for english in ('Your workshop request','Plans changed?','AI reply','AI replies are conversational guidance',
+                        'Anyone holding your valid order link','Seller sign in','Conversation responses in local tests'):
+            assert english not in response.text
+    draft,version=w.sql('SELECT id,version FROM request_drafts')[0]
+    result=await c.post(link+'/choose',data={'csrf':csrf(c),'draft_id':draft,'draft_version':version,
+        'option_id':'move:ui2-session','language':language})
+    assert result.status_code==200
+    assert f'datetime="{starts.isoformat()}"' in result.text
+    assert '2026-11-18 01:00 UTC' in result.text
+    assert ('변경된 워크숍 일시' if language=='ko' else 'New workshop date') in result.text
+    if language=='ko':
+        for english in ('Workshop order','Send another message','Plans changed?'):
+            assert english not in result.text
+    assert w.adapter_calls==0
+
+
+async def test_seller_sections_and_pending_cases_are_first(web):
+    c,w=web
+    await w.delegate(per=0)
+    pending=await w.submit()
+    w.sql('UPDATE delegations SET per_refund_limit_cents=5000')
+    w.order('later',2900)
+    done=await w.submit('later')
+    seller(c)
+    html=(await c.get('/seller')).text
+    anchors=['aria-label="Refund totals"','<h2>Requests</h2>','<h2>Automatic permission</h2>',
+             '<h2 id="timeline-title">','<h2 id="ai-cost-title">']
+    positions=[html.index(anchor) for anchor in anchors]
+    assert positions==sorted(positions)
+    requests=html.split('<h2>Requests</h2>')[1].split('<aside')[0]
+    assert requests.index(pending.request_id)<requests.index(done.request_id)
+    assert '>Refund authorized</a>' in html
+    assert '>execute</a>' not in html
+
+
+@pytest.mark.parametrize('duration',['1','4','8','12','24'])
+async def test_delegation_duration_is_calculated_on_server(web,monkeypatch,duration):
+    from datetime import datetime
+    c,w=web
+    class FixedDatetime(datetime):
+        @classmethod
+        def now(cls,tz=None): return NOW
+    monkeypatch.setattr('daybreak.web.datetime',FixedDatetime)
+    seller(c)
+    page=await c.get('/seller')
+    assert 'name="duration_hours"' in page.text and 'name="expires_at"' not in page.text
+    response=await c.post('/seller/delegations',data={'csrf':csrf(c),'per_refund':'50','total':'100',
+        'duration_hours':duration,'expires_at':'2099-01-01T00:00:00Z'})
+    assert response.status_code==303
+    assert w.service.latest_delegation().expires_at==NOW+timedelta(hours=int(duration))
+
+
+@pytest.mark.parametrize('duration',['0','-1','999','1.5','tomorrow',''])
+async def test_invalid_duration_does_not_start_delegation(web,duration):
+    c,w=web;seller(c);await c.get('/seller')
+    response=await c.post('/seller/delegations',data={'csrf':csrf(c),'per_refund':'50','total':'100','duration_hours':duration})
+    assert response.status_code==422
+    assert w.service.latest_delegation() is None

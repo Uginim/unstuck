@@ -100,7 +100,7 @@ async def test_case17_authorization_boundaries(web,variant):
 async def test_delegation_forms_and_unknown_recheck(web):
     c,w=web
     seller(c);await c.get('/seller')
-    data={'per_refund':'50','total':'100','expires_at':(NOW+timedelta(hours=7)).isoformat(),'csrf':csrf(c)}
+    data={'per_refund':'50','total':'100','duration_hours':'8','csrf':csrf(c)}
     assert (await c.post('/seller/delegations',data={**data,'per_refund':'0.001'})).status_code==422
     assert (await c.post('/seller/delegations',data=data)).status_code==303
     delegation=w.service.latest_delegation().id

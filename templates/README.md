@@ -4,7 +4,7 @@
 
 Routes: `/login`, `/seller`, `/seller/cases/{request_id}`, `/order/{signed_token}`. Customer links are issued by `auth.make_order_token`; possession grants access, not verified identity. Seller POSTs require the authenticated cookie and a CSRF form token. HTML responses suppress caching and referrers, escape customer text, and include a payment-mode banner even for handled errors. Dummy screens always say **Dummy PayPal, not Sandbox**.
 
-Delegation expiry accepts an ISO timestamp with an explicit timezone, for example `2026-11-10T08:00:00Z`. The dashboard reads the latest delegation and pause status from `RefundService`; stop uses the returned ID, with no browser-cookie copy of delegation state. Resume requires an explicit reconciliation acknowledgment and is rejected by the service while unknown jobs remain. Unknown detail pages explain that a retry outside the service window stays unknown; the current view contract does not expose that specific error code.
+Delegation duration is selected as 1, 4, 8, 12 or 24 hours from now. The server calculates an aware UTC expiry; client-provided timestamps are ignored. The dashboard orders summary, requests (approval pending first), delegation, timeline, then AI cost, using the same document order on phones. It reads current delegation and pause status from the service. Resume requires an explicit reconciliation acknowledgment and is rejected while unknown jobs remain. Unknown detail pages explain the retry window; the view contract does not expose that specific error code.
 
 The existing `operator.html` and `customer.html` remain standalone synthetic layout examples, distinct from the connected templates. Their `preview.js` never sends payment or model requests. Connected pages do not load this script.
 
@@ -19,3 +19,6 @@ Phone CSS review: 320–420px uses a single-column summary, wrapping navigation/
 
 
 The seller-only AI cost panel reads `ai_usage()`. Conversations are the average-cost denominator; micro-USD values are formatted without floating-point conversion. Zero measured turns show “No measured model calls”. Dummy mode suppresses all cost amounts even if usage exists. The API returns one reported model name; the UI does not infer a per-model breakdown.
+
+
+Move options explain in English/Korean that the refund deadline remains based on the original session. Move results display only `CaseView.booking_starts_at` as the new date. Customer-owned interface copy, including AI reply labels and result headings, follows the language table; the required “Dummy PayPal, not Sandbox” disclosure stays verbatim. Timeline event labels are explanatory text rather than internal action codes.

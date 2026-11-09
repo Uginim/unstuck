@@ -117,8 +117,7 @@ def run(fault=False):
                         assert 'Automatic execution is paused' in dashboard.text
                         dashboard=submit(client,dashboard,'/seller/resume',reviewed='yes')
                         assert 'Automatic execution is paused' not in dashboard.text
-                    expires=(datetime.now(timezone.utc)+timedelta(hours=7)).isoformat()
-                    dashboard=submit(client,dashboard,'/seller/delegations',per_refund='50',total='100',expires_at=expires)
+                    dashboard=submit(client,dashboard,'/seller/delegations',per_refund='50',total='100',duration_hours='8')
                     assert 'Latest delegation' in dashboard.text
                     reviews={}
                     def request(order):

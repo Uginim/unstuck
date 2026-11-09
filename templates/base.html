@@ -1,6 +1,6 @@
 <!doctype html>
-<html lang="{{ language }}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Daybreak · Refund requests</title><link rel="stylesheet" href="/static/daybreak.css"></head>
-<body><a class="skip" href="#main">Skip to content</a>
-<div class="preview" role="note">{% if mode == 'dummy' %}<strong>Dummy PayPal, not Sandbox</strong> · No real payment requests{% else %}PayPal Sandbox · No real money{% endif %}</div>
-<div class="shell"><header><a class="brand" href="/seller">daybreak</a><nav aria-label="Main"><a href="/seller">Overview</a>{% if seller_signed_in %}<a href="/seller">Seller account</a>{% else %}<a href="/login">Seller sign in</a>{% endif %}</nav></header>
-<main id="main">{% block content %}{% endblock %}</main><footer>Daybreak · PayPal refunds within your limits. {% if mode == 'dummy' %}Dummy PayPal, not Sandbox.{% endif %}</footer></div></body></html>
+<html lang="{{ language }}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Daybreak · {{ ui.page_title }}</title><link rel="stylesheet" href="/static/daybreak.css"></head>
+<body><a class="skip" href="#main">{{ ui.skip }}</a>
+<div class="preview" role="note">{% if mode == 'dummy' %}<strong>Dummy PayPal, not Sandbox</strong> · {{ ui.no_payments }}{% else %}{{ ui.sandbox_note }}{% endif %}</div>
+<div class="shell"><header><a class="brand" href="/seller">daybreak</a><nav aria-label="{{ ui.navigation }}"><a href="/seller">{{ ui.overview }}</a>{% if seller_signed_in %}<a href="/seller">{{ ui.account }}</a>{% else %}<a href="/login">{{ ui.sign_in }}</a>{% endif %}</nav></header>
+<main id="main">{% block content %}{% endblock %}</main><footer>Daybreak · {{ ui.tagline }} {% if mode == 'dummy' %}Dummy PayPal, not Sandbox.{% endif %}</footer></div></body></html>
