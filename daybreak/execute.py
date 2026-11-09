@@ -8,9 +8,12 @@ import asyncio
 import sqlite3
 import uuid
 from contextlib import contextmanager
+from decimal import Decimal
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 from pathlib import Path
+
+import re
 
 from .domain import (
     HOLDS_LIMIT,
@@ -23,11 +26,17 @@ from .domain import (
     Policy,
     Usage,
     decide,
+    entitled_cents,
 )
 from .logbook import Logbook
 from .paypal import cents_to_value
 from .ports import (
+    AgentPort,
+    AgentTurn,
     CaptureFacts,
+    ConversationView,
+    Option,
+    TimelineEvent,
     CaseView,
     Clock,
     DelegationView,
@@ -57,6 +66,13 @@ STATUS_BY_OUTCOME = {
     "needs_review": "needs_review",
     "link_existing": "linked",
 }
+# Anything that reads as a money amount in model text must match an amount code offered.
+MONEY = re.compile(
+    r"[$€£₩¥]\s?(\d[\d,]*(?:\.\d+)?)|(\d[\d,]*(?:\.\d+)?)\s?(?:dollars?|usd|달러|불|원|ドル|円|euros?)",
+    re.IGNORECASE,
+)
+FALLBACK_REPLY = "Here are the options available for your order. Only these buttons change your order."
+UNREADABLE_TURN = AgentTurn("other", True, "We could not read this request automatically.", FALLBACK_REPLY, "en")
 UNREADABLE = Extraction("other", True, "We could not read this request automatically.")
 
 
@@ -105,7 +121,9 @@ class Service:
         extractor: ExtractorPort,
         clock: Clock,
         log: Logbook | None = None,
+        agent: AgentPort | None = None,
     ):
+        self._agent = agent
         self._db = db_path
         self._paypal = paypal
         self._extractor = extractor
@@ -204,7 +222,7 @@ class Service:
             await self._run(send)
         return self.get_case(request_id)
 
-    def _confirm_tx(self, draft_id, draft_version, order_id, facts) -> tuple[str, _Send | None]:
+    def _confirm_tx(self, draft_id, draft_version, order_id, facts, explicit=False) -> tuple[str, _Send | None]:
         with self._tx() as c:
             draft = c.execute(
                 "SELECT * FROM request_drafts WHERE id=? AND order_id=?", (draft_id, order_id)
@@ -222,11 +240,13 @@ class Service:
             order_row = self._order_row(c, order_id)
             now = self._clock.now()
             request_id = uuid.uuid4().hex
-            req = ConfirmedRequest(
-                request_id, draft_version, draft["kind"], bool(draft["ambiguous"]), order_row["amount_cents"], now
-            )
             delegation_row = c.execute("SELECT * FROM delegations ORDER BY started_at DESC LIMIT 1").fetchone()
             policy_version = delegation_row["policy_version"] if delegation_row else self._latest_policy(c)
+            entitled = entitled_cents(_order(order_row), self._policy(c, policy_version), now)
+            kind, ambiguous = ("refund", False) if explicit else (draft["kind"], bool(draft["ambiguous"]))
+            req = ConfirmedRequest(
+                request_id, draft_version, kind, ambiguous, entitled or order_row["amount_cents"], now
+            )
             decision = self._decide(c, req, order_row, policy_version, delegation_row, facts, now, "agent")
             c.execute(
                 "INSERT INTO confirmed_requests (id, draft_id, draft_version, order_id, kind, ambiguous, amount_cents,"
@@ -238,8 +258,20 @@ class Service:
             )
             delegation_id = delegation_row["id"] if delegation_row else None
             send = self._reserve(c, request_id, order_row, decision, "agent", delegation_id, now)
+            self._event(c, request_id, now, decision.outcome, f"{decision.reason} ({_usd(req.amount_cents)})")
             self._log.write("decision", request_id=request_id, actor="agent", decision=decision)
             return request_id, send
+
+    def _event(self, c, request_id: str, at: datetime, kind: str, detail: str) -> None:
+        c.execute(
+            "INSERT INTO case_events (request_id, at, kind, detail) VALUES (?,?,?,?)",
+            (request_id, at.isoformat(), kind, detail),
+        )
+
+    @staticmethod
+    def _policy(c: sqlite3.Connection, version: int) -> Policy:
+        row = c.execute("SELECT * FROM policies WHERE version=?", (version,)).fetchone()
+        return Policy(row["version"], row["full_refund_cutoff_hours"], row["partial_cutoff_hours"], row["partial_percent"])
 
     def _latest_policy(self, c: sqlite3.Connection) -> int:
         row = c.execute("SELECT MAX(version) AS v FROM policies").fetchone()
@@ -249,8 +281,7 @@ class Service:
 
     def _decide(self, c, req, order_row, policy_version, delegation_row, facts, now, actor: Actor) -> Decision:
         order = _order(order_row)
-        policy_row = c.execute("SELECT * FROM policies WHERE version=?", (policy_version,)).fetchone()
-        policy = Policy(policy_row["version"], policy_row["full_refund_cutoff_hours"])
+        policy = self._policy(c, policy_version)
         held = 0
         if delegation_row:
             marks = ",".join("?" * len(HOLDS_LIMIT))
@@ -361,6 +392,180 @@ class Service:
                 "UPDATE refund_jobs SET state=?, refund_id=COALESCE(?, refund_id), updated_at=? WHERE id=?",
                 (state, result.refund_id, now, send.job_id),
             )
+            detail = f"{_usd(send.amount_cents)} {result.refund_id or result.error_code or ''}".strip()
+            self._event(c, send.request_id, self._clock.now(), f"refund_{state}", detail)
+
+    # Conversation
+
+    def _options(self, c, order_row, now: datetime) -> list[Option]:
+        order = _order(order_row)
+        options: list[Option] = []
+        delegation = c.execute("SELECT policy_version FROM delegations ORDER BY started_at DESC LIMIT 1").fetchone()
+        policy = self._policy(c, delegation["policy_version"] if delegation else self._latest_policy(c))
+        job = c.execute("SELECT state FROM refund_jobs WHERE capture_id=?", (order.capture_id,)).fetchone()
+        untouched = job is None or job["state"] == "failed"
+        entitled = entitled_cents(order, policy, now)
+        if untouched and entitled:
+            kind = "Full" if entitled == order.amount_cents else "Partial"
+            options.append(Option("refund", "refund", f"{kind} refund of {_usd(entitled)}", entitled))
+        if untouched:
+            rows = c.execute(
+                "SELECT * FROM sessions WHERE workshop=? AND seats_left>0 AND starts_at>? AND starts_at<>?"
+                " ORDER BY starts_at",
+                (order_row["session_name"], now.isoformat(), order_row["session_starts_at"]),
+            ).fetchall()
+            for row in rows:
+                options.append(Option(
+                    f"move:{row['id']}", "move", f"Move to {row['starts_at'][:16].replace('T', ' ')} UTC",
+                    starts_at=_time(row["starts_at"]),
+                ))
+        options.append(Option("keep", "keep", "Keep my booking"))
+        return options
+
+    @staticmethod
+    def _guard_reply(reply: str, options: list[Option]) -> tuple[str, bool]:
+        """A chatbot's promise can bind a seller, so unoffered amounts never reach the customer."""
+        allowed = {Decimal(o.amount_cents) / 100 for o in options if o.amount_cents is not None}
+        for match in MONEY.finditer(reply):
+            value = (match.group(1) or match.group(2)).replace(",", "")
+            if Decimal(value) not in allowed:
+                return FALLBACK_REPLY, True
+        return reply, False
+
+    async def converse(self, order_id: str, message: str, draft_id: str | None = None) -> ConversationView:
+        message = message.strip()
+        if not message:
+            raise InvalidInput("message")
+        if self._agent is None:
+            raise InvalidState("agent not configured")
+        now = self._clock.now()
+        with self._tx() as c:
+            order_row = self._order_row(c, order_id)
+            history: list[tuple[str, str]] = []
+            if draft_id:
+                if not c.execute(
+                    "SELECT 1 FROM request_drafts WHERE id=? AND order_id=?", (draft_id, order_id)
+                ).fetchone():
+                    raise NotFound("draft")
+                history = [(r["role"], r["body"]) for r in c.execute(
+                    "SELECT role, body FROM conversation_messages WHERE draft_id=? ORDER BY rowid", (draft_id,)
+                )]
+            options = self._options(c, order_row, now)
+        history.append(("customer", message))
+        try:
+            turn = await self._agent.respond(history, order_row["session_name"], options)
+        except Exception as error:  # model failure leaves the code-built buttons working
+            self._log.write("agent_error", order_id=order_id, message=message, error=repr(error))
+            turn = UNREADABLE_TURN
+        reply, replaced = self._guard_reply(turn.reply, options)
+        suggested = turn.suggested_option if turn.suggested_option in {o.id for o in options} else None
+        self._log.write(
+            "agent_turn", order_id=order_id, message=message, turn=turn, shown=reply,
+            replaced=replaced, options=options,
+        )
+        stamp = now.isoformat()
+        with self._tx() as c:
+            if draft_id:
+                c.execute(
+                    "UPDATE request_drafts SET message=?, kind=?, ambiguous=?, summary=?, version=version+1,"
+                    " updated_at=? WHERE id=?",
+                    (message, turn.kind, int(turn.ambiguous), turn.summary, stamp, draft_id),
+                )
+            else:
+                draft_id = uuid.uuid4().hex
+                c.execute(
+                    "INSERT INTO request_drafts (id, order_id, message, kind, ambiguous, summary, created_at,"
+                    " updated_at) VALUES (?,?,?,?,?,?,?,?)",
+                    (draft_id, order_id, message, turn.kind, int(turn.ambiguous), turn.summary, stamp, stamp),
+                )
+            for role, body in (("customer", message), ("agent", reply)):
+                c.execute(
+                    "INSERT INTO conversation_messages (id, draft_id, role, body, created_at) VALUES (?,?,?,?,?)",
+                    (uuid.uuid4().hex, draft_id, role, body, stamp),
+                )
+            version = c.execute("SELECT version FROM request_drafts WHERE id=?", (draft_id,)).fetchone()["version"]
+            messages = [(r["role"], r["body"]) for r in c.execute(
+                "SELECT role, body FROM conversation_messages WHERE draft_id=? ORDER BY rowid", (draft_id,)
+            )]
+        return ConversationView(
+            draft_id, version, reply, replaced, turn.language, options, suggested,
+            order_row["session_name"], messages,
+        )
+
+    async def choose(self, draft_id: str, draft_version: int, order_id: str, option_id: str) -> CaseView:
+        """The customer's button press is the confirmation. Options are rebuilt here, so a stale
+        or forged option id cannot select anything the current policy and seats do not allow."""
+        with self._tx() as c:
+            order_row = self._order_row(c, order_id)
+            offered = {o.id: o for o in self._options(c, order_row, self._clock.now())}
+        if option_id not in offered:
+            replay = self._replay(draft_id, draft_version, order_id)
+            if replay:
+                return self.get_case(replay)
+            raise InvalidState("option no longer available")
+        option = offered[option_id]
+        if option.kind == "refund":
+            facts = await self._paypal.get_capture(order_row["capture_id"])
+            request_id, send = await asyncio.to_thread(
+                self._confirm_tx, draft_id, draft_version, order_id, facts, True
+            )
+            if send:
+                await self._run(send)
+            return self.get_case(request_id)
+        request_id = await asyncio.to_thread(self._no_money_tx, draft_id, draft_version, order_id, option)
+        return self.get_case(request_id)
+
+    def _replay(self, draft_id, draft_version, order_id) -> str | None:
+        with self._tx() as c:
+            row = c.execute(
+                "SELECT id FROM confirmed_requests WHERE draft_id=? AND draft_version=? AND order_id=?",
+                (draft_id, draft_version, order_id),
+            ).fetchone()
+            return row["id"] if row else None
+
+    def _no_money_tx(self, draft_id, draft_version, order_id, option: Option) -> str:
+        with self._tx() as c:
+            draft = c.execute(
+                "SELECT * FROM request_drafts WHERE id=? AND order_id=?", (draft_id, order_id)
+            ).fetchone()
+            if draft is None:
+                raise NotFound("draft")
+            if draft["version"] != draft_version:
+                raise StaleVersion("draft changed")
+            replay = c.execute(
+                "SELECT id FROM confirmed_requests WHERE draft_id=? AND draft_version=?", (draft_id, draft_version)
+            ).fetchone()
+            if replay:
+                return replay["id"]
+            order_row = self._order_row(c, order_id)
+            now = self._clock.now()
+            status, reason = "kept", "ok"
+            if option.kind == "move":
+                session_id = option.id.removeprefix("move:")
+                row = c.execute("SELECT * FROM sessions WHERE id=?", (session_id,)).fetchone()
+                taken = c.execute(
+                    "UPDATE sessions SET seats_left=seats_left-1 WHERE id=? AND seats_left>0", (session_id,)
+                )
+                if row is None or taken.rowcount != 1:
+                    raise InvalidState("session is full")
+                c.execute("UPDATE orders SET session_starts_at=? WHERE id=?", (row["starts_at"], order_id))
+                status = "moved"
+            request_id = uuid.uuid4().hex
+            c.execute(
+                "INSERT INTO confirmed_requests (id, draft_id, draft_version, order_id, kind, ambiguous, amount_cents,"
+                " received_at, policy_version, delegation_id, status, reason) VALUES (?,?,?,?,?,0,0,?,?,NULL,?,?)",
+                (request_id, draft_id, draft_version, order_id, draft["kind"], now.isoformat(),
+                 self._latest_policy(c), status, reason),
+            )
+            self._event(c, request_id, now, status, option.label)
+            return request_id
+
+    def timeline(self, limit: int = 100) -> list[TimelineEvent]:
+        with self._tx() as c:
+            rows = c.execute(
+                "SELECT * FROM (SELECT * FROM case_events ORDER BY id DESC LIMIT ?) ORDER BY id", (limit,)
+            ).fetchall()
+            return [TimelineEvent(_time(r["at"]), r["request_id"], r["kind"], r["detail"]) for r in rows]
 
     # Seller path
 
@@ -397,6 +602,7 @@ class Service:
                 "UPDATE confirmed_requests SET status=?, reason=?, job_id=COALESCE(?, job_id) WHERE id=?",
                 (STATUS_BY_OUTCOME[decision.outcome], decision.reason, decision.existing_job_id, request_id),
             )
+            self._event(c, request_id, now, f"seller_{decision.outcome}", f"{decision.reason} ({_usd(req.amount_cents)})")
             self._log.write("decision", request_id=request_id, actor="seller", decision=decision)
             return self._reserve(c, request_id, order_row, decision, "seller", None, now)
 

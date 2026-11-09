@@ -42,7 +42,7 @@ class World:
             return await original(*args, **kwargs)
         self.client.refund = counted
         self.service = Service(self.db, self.client, self.extractor, self.clock)
-        self.sql('INSERT INTO policies VALUES (3,24)')
+        self.sql('INSERT INTO policies (version, full_refund_cutoff_hours) VALUES (3,24)')
         self.order('a', 3900)
 
     def handle(self, request):

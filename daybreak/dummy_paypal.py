@@ -65,7 +65,7 @@ class DummyPayPal:
         capture = self.captures.get(capture_id)
         if capture is None:
             return self._error(404, "RESOURCE_NOT_FOUND")
-        if capture["status"] == "REFUNDED":
+        if capture["status"] in ("REFUNDED", "PARTIALLY_REFUNDED"):
             return self._error(422, "CAPTURE_FULLY_REFUNDED")
 
         amount = json.loads(request.content)["amount"]
@@ -82,7 +82,8 @@ class DummyPayPal:
         }
         self.refunds[refund["id"]] = refund
         self.by_request_id[key] = refund["id"]
-        capture["status"] = "REFUNDED"
+        full = Decimal(amount["value"]) == Decimal(capture["amount"]["value"])
+        capture["status"] = "REFUNDED" if full else "PARTIALLY_REFUNDED"
         if fault == "lost":
             raise httpx.ReadTimeout("dummy lost response", request=request)
         return httpx.Response(201, json=refund)

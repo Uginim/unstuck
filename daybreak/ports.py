@@ -46,6 +46,35 @@ class ExtractorPort(Protocol):
     async def extract(self, message: str, session_name: str) -> Extraction: ...
 
 
+OptionKind = Literal["refund", "move", "keep"]
+
+
+@dataclass(frozen=True)
+class Option:
+    """Built by code from policy, order and seats. The model can only point at one by id."""
+    id: str  # "refund", "keep", or "move:<session id>"
+    kind: OptionKind
+    label: str
+    amount_cents: int | None = None
+    starts_at: datetime | None = None
+
+
+@dataclass(frozen=True)
+class AgentTurn:
+    kind: Literal["refund", "question", "other"]
+    ambiguous: bool
+    summary: str  # English, for the seller
+    reply: str  # in the customer's language; never authoritative
+    language: str  # BCP 47, e.g. "en", "ko"
+    suggested_option: str | None = None
+
+
+class AgentPort(Protocol):
+    async def respond(
+        self, history: list[tuple[str, str]], session_name: str, options: list[Option]
+    ) -> AgentTurn: ...
+
+
 class Clock(Protocol):
     def now(self) -> datetime: ...  # timezone-aware UTC
 
@@ -95,6 +124,27 @@ class DelegationView:
     stopped_at: datetime | None
 
 
+@dataclass(frozen=True)
+class ConversationView:
+    draft_id: str
+    version: int
+    reply: str
+    reply_was_replaced: bool  # the money guard rejected the model's text
+    language: str
+    options: list[Option]
+    suggested_option: str | None
+    session_name: str
+    messages: list[tuple[str, str]]  # (role, body)
+
+
+@dataclass(frozen=True)
+class TimelineEvent:
+    at: datetime
+    request_id: str
+    kind: str
+    detail: str
+
+
 class ServiceError(Exception):
     """Base for caller errors. Provider failures are not errors: they appear as CaseView states."""
 
@@ -112,6 +162,9 @@ class RefundService(Protocol):
     async def edit_message(self, draft_id: str, order_id: str, message: str) -> DraftView: ...
     async def confirm(self, draft_id: str, draft_version: int, order_id: str) -> CaseView: ...
     async def approve(self, request_id: str) -> CaseView: ...  # seller only
+    async def converse(self, order_id: str, message: str, draft_id: str | None = None) -> ConversationView: ...
+    async def choose(self, draft_id: str, draft_version: int, order_id: str, option_id: str) -> CaseView: ...
+    def timeline(self, limit: int = 100) -> list[TimelineEvent]: ...
     async def start_delegation(
         self, per_refund_limit_cents: int, total_limit_cents: int, expires_at: datetime
     ) -> str: ...

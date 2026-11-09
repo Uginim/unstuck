@@ -7,7 +7,7 @@ import pytest
 from daybreak.dummy_paypal import DummyPayPal
 from daybreak.execute import Service
 from daybreak.paypal import PayPalClient
-from daybreak.ports import Extraction, InvalidState, StaleVersion
+from daybreak.ports import AgentTurn, Extraction, InvalidState, StaleVersion
 from daybreak.seed import ORDERS, seed
 
 NOW = datetime(2026, 11, 8, 1, tzinfo=timezone.utc)
@@ -21,6 +21,66 @@ class FixedClock:
 class Stub:
     async def extract(self, message, session_name):
         return Extraction("refund", False, "Refund request")
+
+
+class ScriptedAgent:
+    def __init__(self, reply="OK", kind="refund", suggested="refund"):
+        self.reply, self.kind, self.suggested = reply, kind, suggested
+
+    async def respond(self, history, session_name, options):
+        return AgentTurn(self.kind, False, "Summary", self.reply, "ko", self.suggested)
+
+
+async def world_with_agent(world, agent, starts_in=None):
+    service, dummy, db, client = world
+    return Service(db, client, Stub(), FixedClock(), agent=agent), dummy, db
+
+
+async def test_agent_cannot_promise_unoffered_amount(world):
+    service, *_ = await world_with_agent(world, ScriptedAgent("전액 $500 환불해 드릴게요"))
+    view = await service.converse("order-39", "돈 돌려줘요")
+    assert view.reply_was_replaced and "$500" not in view.reply
+
+
+async def test_agent_may_state_offered_amount_and_suggest(world):
+    service, *_ = await world_with_agent(world, ScriptedAgent("$39.00 환불이 가능합니다"))
+    view = await service.converse("order-39", "돈 돌려줘요")
+    assert not view.reply_was_replaced and view.suggested_option == "refund"
+
+
+async def test_forged_option_rejected_and_refund_button_runs_money_path(world):
+    service, dummy, *_ = await world_with_agent(world, ScriptedAgent(suggested="move:nope"))
+    await service.start_delegation(5000, 10000, NOW + timedelta(hours=7))
+    view = await service.converse("order-39", "refund")
+    assert view.suggested_option is None
+    with pytest.raises(InvalidState):
+        await service.choose(view.draft_id, view.version, "order-39", "refund:99999")
+    case = await service.choose(view.draft_id, view.version, "order-39", "refund")
+    assert case.job_state == "completed" and dummy.money_out_calls == 1
+
+
+async def test_move_takes_seat_moves_no_money_then_seat_runs_out(world):
+    service, dummy, db, = await world_with_agent(world, ScriptedAgent(kind="other"))
+    view = await service.converse("order-39", "다른 날짜로 옮길 수 있나요")
+    move = next(o for o in view.options if o.kind == "move")
+    case = await service.choose(view.draft_id, view.version, "order-39", move.id)
+    assert case.status == "moved" and dummy.refund_calls == 0
+    assert any(e.kind == "moved" for e in service.timeline())
+
+
+async def test_partial_refund_inside_partial_window(world):
+    service, dummy, db, client = world
+    agent_service = Service(db, client, Stub(), FixedClock(), agent=ScriptedAgent())
+    import sqlite3
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE orders SET session_starts_at=? WHERE id='order-39'", ((NOW + timedelta(hours=5)).isoformat(),))
+    await agent_service.start_delegation(5000, 10000, NOW + timedelta(hours=7))
+    view = await agent_service.converse("order-39", "refund")
+    refund = next(o for o in view.options if o.kind == "refund")
+    assert refund.amount_cents == 1950
+    case = await agent_service.choose(view.draft_id, view.version, "order-39", "refund")
+    assert (case.job_state, case.amount_cents) == ("completed", 1950)
+    assert dummy.captures["CAP-39"]["status"] == "PARTIALLY_REFUNDED"
 
 
 @pytest.fixture

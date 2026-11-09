@@ -3,7 +3,9 @@ PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS policies (
   version INTEGER PRIMARY KEY,
-  full_refund_cutoff_hours INTEGER NOT NULL CHECK (full_refund_cutoff_hours >= 0)
+  full_refund_cutoff_hours INTEGER NOT NULL CHECK (full_refund_cutoff_hours >= 0),
+  partial_cutoff_hours INTEGER NOT NULL DEFAULT 0 CHECK (partial_cutoff_hours >= 0),
+  partial_percent INTEGER NOT NULL DEFAULT 0 CHECK (partial_percent BETWEEN 0 AND 100)
 );
 
 CREATE TABLE IF NOT EXISTS orders (
@@ -51,7 +53,7 @@ CREATE TABLE IF NOT EXISTS confirmed_requests (
   policy_version INTEGER NOT NULL REFERENCES policies(version),
   delegation_id TEXT REFERENCES delegations(id),
   status TEXT NOT NULL CHECK (status IN
-    ('needs_review','rejected_policy','pending_approval','approved','linked')),
+    ('needs_review','rejected_policy','pending_approval','approved','linked','moved','kept')),
   reason TEXT NOT NULL,
   job_id TEXT REFERENCES refund_jobs(id),
   UNIQUE (draft_id, draft_version)
@@ -87,6 +89,31 @@ CREATE TABLE IF NOT EXISTS refund_attempts (
   started_at TEXT NOT NULL,
   finished_at TEXT,
   UNIQUE (job_id, attempt_no)
+);
+
+-- Other dates for the same workshop. A move changes no money and reserves a seat atomically.
+CREATE TABLE IF NOT EXISTS sessions (
+  id TEXT PRIMARY KEY,
+  workshop TEXT NOT NULL,
+  starts_at TEXT NOT NULL,
+  seats_left INTEGER NOT NULL CHECK (seats_left >= 0)
+);
+
+CREATE TABLE IF NOT EXISTS conversation_messages (
+  id TEXT PRIMARY KEY,
+  draft_id TEXT NOT NULL REFERENCES request_drafts(id),
+  role TEXT NOT NULL CHECK (role IN ('customer','agent')),
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
+-- What the seller replays in the morning. Written in the same transaction as the change.
+CREATE TABLE IF NOT EXISTS case_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  request_id TEXT NOT NULL,
+  at TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  detail TEXT NOT NULL
 );
 
 -- auto_execution_paused = '1' after a restore, until reconciliation finishes.

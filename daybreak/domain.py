@@ -53,6 +53,8 @@ class Order:
 class Policy:
     version: int
     full_refund_cutoff_hours: int
+    partial_cutoff_hours: int = 0
+    partial_percent: int = 0
 
 
 @dataclass(frozen=True)
@@ -85,6 +87,16 @@ class Decision:
     existing_job_id: str | None = None
 
 
+def entitled_cents(order: Order, policy: Policy, at: datetime) -> int:
+    """The refund the policy allows at this moment. Exactly at a cutoff is still inside it.
+    Rounds down, so a partial refund never exceeds the stated percentage."""
+    if at <= order.session_starts_at - timedelta(hours=policy.full_refund_cutoff_hours):
+        return order.amount_cents
+    if policy.partial_percent and at <= order.session_starts_at - timedelta(hours=policy.partial_cutoff_hours):
+        return order.amount_cents * policy.partial_percent // 100
+    return 0
+
+
 def decide(
     req: ConfirmedRequest,
     order: Order,
@@ -109,7 +121,7 @@ def decide(
         return Decision("needs_review", "not_refund_request", amount)
     if req.ambiguous:
         return Decision("needs_review", "ambiguous_request", amount)
-    if order.currency != SUPPORTED_CURRENCY or amount <= 0 or amount != order.amount_cents:
+    if order.currency != SUPPORTED_CURRENCY or amount <= 0 or amount > order.amount_cents:
         return Decision("needs_review", "insufficient_order_facts", amount)
 
     if existing is not None:
@@ -120,10 +132,11 @@ def decide(
         if existing.state != "failed":
             return Decision("link_existing", "in_progress", amount, existing.id)
 
-    # Exactly at the cutoff is still inside the window.
-    cutoff = order.session_starts_at - timedelta(hours=policy.full_refund_cutoff_hours)
-    if req.received_at > cutoff:
+    entitled = entitled_cents(order, policy, req.received_at)
+    if entitled == 0:
         return Decision("rejected_policy", "outside_window", amount)
+    if amount != entitled:
+        return Decision("needs_review", "insufficient_order_facts", amount)
 
     if actor == "seller":
         return Decision("execute", "ok", amount)
