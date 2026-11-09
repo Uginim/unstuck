@@ -1,12 +1,12 @@
 {% extends 'base.html' %}{% block content %}
 <div class="customer"><p class="eyebrow">Your workshop request</p><h1>Plans changed?</h1>
-{% if case %}{% include 'evidence.html' %}<a href="/order/{{ token }}">Send another message</a>
+{% if result %}<section class="panel"><h2>{{ result.status }}</h2><dl class="receipt"><div><dt>Amount</dt><dd>{{ result.amount_cents | usd }} USD</dd></div><div><dt>Workshop order</dt><dd>{{ result.order_id }}</dd></div>{% if result.refund_id %}<div><dt>Refund ID</dt><dd>{{ result.refund_id }}</dd></div>{% endif %}</dl></section><a href="/order/{{ token }}">Send another message</a>
 {% elif draft %}
 <section class="panel"><h2>Review before submitting</h2><p>{{ draft.summary }}</p><p>Request type: {{ draft.kind }}{% if draft.ambiguous %} · Needs review{% endif %}</p><p>Order: <strong>{{ draft.session_name }}</strong>, full amount <strong>{{ draft.amount_cents | usd }} USD</strong>.</p><p>The order sets the workshop and amount. Submitting does not guarantee a refund.</p>
 <form method="post" action="/order/{{ token }}/confirm"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="draft_id" value="{{ draft.draft_id }}"><input type="hidden" name="draft_version" value="{{ draft.version }}"><button type="submit">Confirm this request</button></form>
 </section>
 {% endif %}
-{% if not case %}<section class="panel"><h2>{% if draft %}Edit and review again{% else %}Your message{% endif %}</h2>
+{% if not result %}<section class="panel"><h2>{% if draft %}Edit and review again{% else %}Your message{% endif %}</h2>
 {% if mode == 'dummy' %}<p class="hint">Without an AI key, the dummy extractor recognizes “Please refund me”. Other wording may need review; it is not an AI evaluation.</p>{% endif %}
 <form method="post" action="/order/{{ token }}/message"><input type="hidden" name="csrf" value="{{ csrf }}">{% if draft %}<input type="hidden" name="draft_id" value="{{ draft.draft_id }}">{% endif %}<label for="message">How can we help?</label><textarea id="message" name="message" maxlength="8000" required></textarea><button type="submit">Review request</button></form></section>{% endif %}
 <p class="hint">Anyone holding your valid order link can manage this order. Keep it private. Questions alone do not authorize refunds.</p></div>{% endblock %}

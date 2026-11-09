@@ -41,7 +41,7 @@ async def test_customer_confirmation_and_seller_approval(web):
     assert '$39.00' in r.text and 'Review before submitting' in r.text
     draft=w.sql('SELECT id,version FROM request_drafts')[0]
     r=await c.post(link+'/confirm',data={'draft_id':draft[0],'draft_version':draft[1],'csrf':csrf(c)})
-    assert 'pending approval' in r.text
+    assert 'The seller will review your request' in r.text
     seller(c)
     request_id=w.sql('SELECT id FROM confirmed_requests')[0][0]
     r=await c.post('/seller/cases/'+request_id+'/approve',data={'csrf':csrf(c)})
@@ -85,7 +85,7 @@ async def test_case17_authorization_boundaries(web,variant):
     else:
         draft=await w.service.submit_message('a','Please refund me')
         r=await c.post('/order/'+token()+'/confirm',data={'draft_id':draft.draft_id,'draft_version':draft.version,'csrf':csrf(c),'actor':'seller'})
-        assert 'pending approval' in r.text
+        assert 'The seller will review your request' in r.text
     w.no_refund()
 
 
@@ -175,3 +175,73 @@ async def test_restore_pause_and_explicit_resume(web):
     w.service.mark_restored()
     assert (await c.post('/seller/resume',data={'csrf':csrf(c),'reviewed':'yes'})).status_code==409
     assert w.service.auto_paused()
+
+
+@pytest.mark.parametrize('outcome',['completed','pending','unknown'])
+@pytest.mark.parametrize('signed_in',[False,True])
+async def test_customer_result_never_exposes_seller_evidence(web,outcome,signed_in):
+    c,w=web
+    await w.delegate(per=2000 if outcome=='pending' else 5000)
+    if outcome=='unknown': w.dummy.faults=['lost']
+    if signed_in: seller(c)
+    link='/order/'+token()
+    await c.get(link)
+    draft=await w.service.submit_message('a','Please refund me')
+    response=await c.post(link+'/confirm',data={
+        'draft_id':draft.draft_id,'draft_version':draft.version,'csrf':csrf(c),
+    })
+    assert response.status_code==200
+    assert '$39.00' in response.text and 'Workshop order' in response.text
+    for private in ('Seller allowed','Customer requested','Policy v3','Delegation:',
+                    '$50.00','$100.00','$20.00','Reason:', 'over per refund',
+                    'per_refund', 'total_limit', '2026-11-08T08:00:00'):
+        assert private not in response.text
+    assert BANNER_TEXT in response.text
+    if outcome=='pending': assert 'The seller will review your request' in response.text
+    if outcome=='unknown': assert 'Result unconfirmed' in response.text
+    if outcome=='completed':
+        assert 'Refund completed' in response.text
+        assert w.sql('SELECT refund_id FROM refund_jobs')[0][0] in response.text
+
+
+BANNER_TEXT='Dummy PayPal, not Sandbox'
+
+
+async def test_navigation_checks_actual_seller_session(web):
+    c,w=web
+    assert 'Seller sign in' in (await c.get('/login')).text
+    c.cookies.set('daybreak_seller','invalid-cookie')
+    assert 'Seller sign in' in (await c.get('/login')).text
+    seller(c)
+    for path in ('/seller','/login','/order/'+token()):
+        response=await c.get(path)
+        assert 'Seller account' in response.text
+        assert 'Seller sign in</a>' not in response.text
+    await c.post('/logout',data={'csrf':csrf(c)})
+    assert 'Seller sign in' in (await c.get('/login')).text
+
+
+async def test_seller_reason_is_readable_and_retains_private_evidence(web):
+    c,w=web
+    await w.delegate()
+    await w.submit()
+    w.order('b',4900);w.order('c',2900)
+    await w.submit('b')
+    case=await w.submit('c')
+    seller(c)
+    for path in ('/seller','/seller/cases/'+case.request_id):
+        response=await c.get(path)
+        assert response.status_code==200
+        assert 'Eligible, but beyond the automatic allowance available when reviewed.' in response.text
+        assert '$12.00' in response.text
+        assert 'over total' not in response.text and 'over_total' not in response.text
+    detail=await c.get('/seller/cases/'+case.request_id)
+    assert 'Seller allowed' in detail.text and 'Policy v3' in detail.text
+    assert 'Current remaining automatic allowance: $12.00.' in detail.text
+
+
+def test_all_contract_reasons_have_seller_copy():
+    from typing import get_args
+    from daybreak.domain import Reason
+    from daybreak.web import SELLER_REASONS
+    assert set(get_args(Reason))==set(SELLER_REASONS)

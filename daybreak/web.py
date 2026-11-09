@@ -19,6 +19,39 @@ ROOT = Path(__file__).resolve().parent.parent
 views = Jinja2Templates(directory=ROOT / 'templates')
 views.env.filters['usd'] = lambda cents: f'${cents // 100}.{cents % 100:02d}'
 
+SELLER_REASONS = {
+    'ok': 'The request met the refund policy and the required permission.',
+    'over_total': 'Eligible, but beyond the automatic allowance available when reviewed.',
+    'over_per_refund': 'Eligible, but above the per-refund automatic limit. Seller approval is required.',
+    'no_delegation': 'Eligible, but no automatic permission was granted. Seller approval is required.',
+    'delegation_expired': 'Eligible, but automatic permission had expired. Seller approval is required.',
+    'delegation_stopped': 'Eligible, but automatic processing was stopped. Seller approval is required.',
+    'outside_window': 'The request arrived after the refund deadline.',
+    'already_refunded': 'This payment has already been refunded. No additional refund was sent.',
+    'in_progress': 'An existing refund is still processing. No additional refund was sent.',
+    'result_unconfirmed': 'The existing payment result is unconfirmed and needs reconciliation.',
+    'insufficient_order_facts': 'The current payment details could not establish refund eligibility.',
+    'ambiguous_request': 'The customer’s intent is unclear and needs review.',
+    'not_refund_request': 'The message does not contain a clear refund request.',
+    'restore_reconciliation_required': 'Automatic processing is paused until restored records are reconciled.',
+}
+views.env.filters['seller_reason'] = lambda reason: SELLER_REASONS.get(reason, 'This request needs review.')
+
+
+def customer_result(case, order_id):
+    """Explicit public fields only; never pass seller evidence into a customer template."""
+    state = {
+        'completed': 'Refund completed', 'paypal_pending': 'Refund pending',
+        'unknown': 'Result unconfirmed', 'failed': 'Refund not completed',
+        'reserved': 'Refund processing', 'executing': 'Refund processing',
+    }.get(case.job_state)
+    if state is None:
+        state = 'Request declined' if case.status == 'rejected_policy' else 'The seller will review your request'
+        if case.reason == 'already_refunded': state = 'Already refunded'
+    return {'status': state, 'amount_cents': case.amount_cents,
+            'order_id': order_id, 'refund_id': case.refund_id}
+
+
 
 def secure_cookie(request: Request):
     return request.url.scheme == 'https' or request.url.hostname not in {'localhost', '127.0.0.1', '::1', 'testserver'}
@@ -26,8 +59,13 @@ def secure_cookie(request: Request):
 
 def render(request: Request, page: str, *, status=200, **values):
     csrf = request.cookies.get('daybreak_csrf') or secrets.token_urlsafe(32)
+    try:
+        require_seller(request.cookies.get(SELLER_COOKIE))
+        seller_signed_in = True
+    except HTTPException:
+        seller_signed_in = False
     response = views.TemplateResponse(request=request, name=page, context={
-        'mode': request.app.state.paypal_mode, 'csrf': csrf, **values,
+        'mode': request.app.state.paypal_mode, 'csrf': csrf, 'seller_signed_in': seller_signed_in, **values,
     }, status_code=status)
     response.set_cookie('daybreak_csrf', csrf, httponly=True, samesite='strict',
                         secure=secure_cookie(request))
@@ -106,7 +144,7 @@ async def home():
 
 @router.get('/order/{token}')
 async def customer(request: Request, token: str, order_id=Depends(require_order)):
-    return render(request, 'request.html', token=token, draft=None, case=None)
+    return render(request, 'request.html', token=token, draft=None, result=None)
 
 
 @router.post('/order/{token}/message')
@@ -115,7 +153,7 @@ async def message(request: Request, token: str, order_id=Depends(require_order),
     draft_id = data.get('draft_id')
     draft = (await svc.edit_message(text(data, 'draft_id', 200), order_id, message_text)
              if draft_id else await svc.submit_message(order_id, message_text))
-    return render(request, 'request.html', token=token, draft=draft, case=None)
+    return render(request, 'request.html', token=token, draft=draft, result=None)
 
 
 @router.post('/order/{token}/confirm')
@@ -125,7 +163,7 @@ async def confirm(request: Request, token: str, order_id=Depends(require_order),
     except ValueError:
         raise InvalidInput('version') from None
     case = await svc.confirm(text(data, 'draft_id', 200), version, order_id)
-    return render(request, 'request.html', token=token, draft=None, case=case)
+    return render(request, 'request.html', token=token, draft=None, result=customer_result(case, order_id))
 
 
 @router.get('/login')
@@ -160,7 +198,7 @@ async def dashboard(request: Request, svc=Depends(service)):
 async def detail(request: Request, request_id: str, svc=Depends(service)):
     case = svc.get_case(request_id)
     if case is None: raise NotFound('request')
-    return render(request, 'detail.html', case=case)
+    return render(request, 'detail.html', case=case, summary=svc.morning_summary())
 
 
 @router.post('/seller/cases/{request_id}/approve', dependencies=[Depends(require_seller)])

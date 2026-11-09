@@ -7,6 +7,7 @@ import base64
 import hashlib
 import hmac
 import os
+import re
 from pathlib import Path
 import secrets
 import socket
@@ -126,7 +127,6 @@ def run(fault=False):
                     if fault:
                         assert 'Result unconfirmed' in first.text
                         overview=get(client,'/seller')
-                        import re
                         path=re.search(r'href="(/seller/cases/[^"]+)"',overview.text).group(1)
                         detail=get(client,path)
                         done=submit(client,detail,'/reconcile')
@@ -135,12 +135,12 @@ def run(fault=False):
                     else:
                         assert 'completed' in first.text
                         assert 'completed' in request('order-49').text
-                        assert 'pending approval' in request('order-29').text
+                        assert 'The seller will review your request' in request('order-29').text
                         duplicate=request('order-39')
-                        assert 'already refunded' in duplicate.text
+                        assert 'Refund completed' in duplicate.text
+                        assert re.search(r'DUMMY-[A-Z0-9]+', first.text).group(0) in duplicate.text
                         overview=get(client,'/seller')
                         assert '$88.00' in overview.text and '$29.00' in overview.text and '$12.00' in overview.text
-                        import re
                         paths=re.findall(r'href="(/seller/cases/[^"]+)"',overview.text)
                         for path in paths:
                             detail=get(client,path)
