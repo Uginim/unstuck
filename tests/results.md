@@ -1,11 +1,11 @@
 # Dummy results / 더미 결과
 
-Tested code revision: `a4c5daeced3f55b2b0730f98d169272974804328`.
+Tested code revision: `256f9e47c5b2b41de9a94d98ac83bc63d6c6b62f`.
 
 **Dummy PayPal, not Sandbox. No live PayPal or model calls.**
 
 Operational catalog: **24/24 scenarios passed**. Variants inside a scenario are assertions, not separately counted successes.
-Pytest report: 70 reported test cases, 0 failed, 0 skipped. Pure-policy subtests and supplemental HTTP/model-shape tests are not additional catalog scenarios.
+Pytest report: 79 reported test cases, 0 failed, 0 skipped. Pure-policy subtests and supplemental HTTP/model-shape tests are not additional catalog scenarios.
 
 Local uvicorn HTTP flows: 2/2 passed (normal app and injected response loss).
 
