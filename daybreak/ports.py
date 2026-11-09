@@ -98,6 +98,7 @@ class CaseView:
     job_state: str | None
     refund_id: str | None
     actor: Literal["agent", "seller"] | None
+    booking_starts_at: datetime | None = None  # the session a moved order now holds
 
 
 @dataclass(frozen=True)

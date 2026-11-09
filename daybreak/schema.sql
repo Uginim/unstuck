@@ -107,6 +107,14 @@ CREATE TABLE IF NOT EXISTS conversation_messages (
   created_at TEXT NOT NULL
 );
 
+-- The session an order was moved to. orders.session_starts_at stays the original start, because
+-- refund deadlines follow the original session: moving must not reopen a closed refund window.
+CREATE TABLE IF NOT EXISTS order_bookings (
+  order_id TEXT PRIMARY KEY REFERENCES orders(id),
+  session_id TEXT NOT NULL REFERENCES sessions(id),
+  starts_at TEXT NOT NULL
+);
+
 -- Measured model spend per turn, from the API's usage field. Never estimated.
 CREATE TABLE IF NOT EXISTS model_usage (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

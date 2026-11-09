@@ -83,6 +83,88 @@ async def test_move_takes_seat_moves_no_money_then_seat_runs_out(world):
     assert any(e.kind == "moved" for e in service.timeline())
 
 
+def _rows(db, sql, *args):
+    import sqlite3
+    with sqlite3.connect(db) as c:
+        return c.execute(sql, args).fetchall()
+
+
+def _seats(db, order):
+    return dict(_rows(db, "SELECT id, seats_left FROM sessions WHERE id LIKE ?", f"{order}-%"))
+
+
+async def _move(service, order, session):
+    view = await service.converse(order, "move me")
+    return await service.choose(view.draft_id, view.version, order, f"move:{session}")
+
+
+async def test_moving_again_returns_the_previous_seat(world):
+    service, _, db = await world_with_agent(world, ScriptedAgent(kind="other"))
+    case = await _move(service, "order-39", "order-39-s1")
+    assert case.booking_starts_at is not None
+    assert _seats(db, "order-39") == {"order-39-s1": 1, "order-39-s2": 2}
+    await _move(service, "order-39", "order-39-s2")
+    assert _seats(db, "order-39") == {"order-39-s1": 2, "order-39-s2": 1}
+    view = await service.converse("order-39", "again")
+    moves = {o.id for o in view.options if o.kind == "move"}
+    assert moves == {"move:order-39-s1"}  # the session they hold now is not offered
+
+
+async def test_full_session_cannot_be_chosen(world):
+    service, _, db = await world_with_agent(world, ScriptedAgent(kind="other"))
+    view = await service.converse("order-39", "move me")
+    import sqlite3
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE sessions SET seats_left=0 WHERE id='order-39-s1'")
+    with pytest.raises(InvalidState):
+        await service.choose(view.draft_id, view.version, "order-39", "move:order-39-s1")
+
+
+async def test_move_does_not_reopen_a_closed_refund_window(world):
+    service, dummy, db = await world_with_agent(world, ScriptedAgent())
+    import sqlite3
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE orders SET session_starts_at=? WHERE id='order-49'", ((NOW + timedelta(hours=1)).isoformat(),))
+    await service.start_delegation(5000, 10000, NOW + timedelta(hours=7))
+    await _move(service, "order-49", "order-49-s1")
+    view = await service.converse("order-49", "now refund me")
+    assert not [o for o in view.options if o.kind == "refund"]
+    with pytest.raises(InvalidState):
+        await service.choose(view.draft_id, view.version, "order-49", "refund")
+    assert dummy.refund_calls == 0
+
+
+async def test_partial_window_stays_partial_after_move(world):
+    service, dummy, db = await world_with_agent(world, ScriptedAgent())
+    import sqlite3
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE orders SET session_starts_at=? WHERE id='order-49'", ((NOW + timedelta(hours=5)).isoformat(),))
+    await _move(service, "order-49", "order-49-s1")
+    view = await service.converse("order-49", "refund")
+    assert next(o for o in view.options if o.kind == "refund").amount_cents == 2450
+
+
+async def test_old_confirm_path_cannot_bypass_window_after_move(world):
+    service, dummy, db = await world_with_agent(world, ScriptedAgent())
+    import sqlite3
+    with sqlite3.connect(db) as c:
+        c.execute("UPDATE orders SET session_starts_at=? WHERE id='order-49'", ((NOW + timedelta(hours=1)).isoformat(),))
+    await service.start_delegation(5000, 10000, NOW + timedelta(hours=7))
+    await _move(service, "order-49", "order-49-s1")
+    case = await submit(service, "order-49")
+    assert case.job_state is None and dummy.refund_calls == 0
+
+
+async def test_completed_refund_returns_the_moved_seat(world):
+    service, dummy, db = await world_with_agent(world, ScriptedAgent())
+    await service.start_delegation(5000, 10000, NOW + timedelta(hours=7))
+    await _move(service, "order-39", "order-39-s1")
+    view = await service.converse("order-39", "refund")
+    case = await service.choose(view.draft_id, view.version, "order-39", "refund")
+    assert case.job_state == "completed"
+    assert _seats(db, "order-39")["order-39-s1"] == 2
+
+
 async def test_partial_refund_inside_partial_window(world):
     service, dummy, db, client = world
     agent_service = Service(db, client, Stub(), FixedClock(), agent=ScriptedAgent())

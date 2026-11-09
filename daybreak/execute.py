@@ -376,6 +376,14 @@ class Service:
                 (state, self._clock.now().isoformat(), job_id, *allowed),
             )
 
+    @staticmethod
+    def _release_seat(c: sqlite3.Connection, order_id: str) -> None:
+        """Gives back the seat a moved order holds. The row is removed, so this cannot release twice."""
+        held = c.execute("SELECT session_id FROM order_bookings WHERE order_id=?", (order_id,)).fetchone()
+        if held:
+            c.execute("UPDATE sessions SET seats_left=seats_left+1 WHERE id=?", (held["session_id"],))
+            c.execute("DELETE FROM order_bookings WHERE order_id=?", (order_id,))
+
     def _record(self, send: _Send, result: RefundResult) -> None:
         state = {
             "completed": "completed",
@@ -393,6 +401,9 @@ class Service:
                 "UPDATE refund_jobs SET state=?, refund_id=COALESCE(?, refund_id), updated_at=? WHERE id=?",
                 (state, result.refund_id, now, send.job_id),
             )
+            if state == "completed":
+                order = c.execute("SELECT id FROM orders WHERE capture_id=?", (send.capture_id,)).fetchone()
+                self._release_seat(c, order["id"])
             detail = f"{_usd(send.amount_cents)} {result.refund_id or result.error_code or ''}".strip()
             self._event(c, send.request_id, self._clock.now(), f"refund_{state}", detail)
 
@@ -410,10 +421,14 @@ class Service:
             kind = "Full" if entitled == order.amount_cents else "Partial"
             options.append(Option("refund", "refund", f"{kind} refund of {_usd(entitled)}", entitled))
         if untouched:
+            current = c.execute(
+                "SELECT session_id FROM order_bookings WHERE order_id=?", (order_row["id"],)
+            ).fetchone()
             rows = c.execute(
-                "SELECT * FROM sessions WHERE workshop=? AND seats_left>0 AND starts_at>? AND starts_at<>?"
+                "SELECT * FROM sessions WHERE workshop=? AND seats_left>0 AND starts_at>? AND starts_at<>? AND id<>?"
                 " ORDER BY starts_at",
-                (order_row["session_name"], now.isoformat(), order_row["session_starts_at"]),
+                (order_row["session_name"], now.isoformat(), order_row["session_starts_at"],
+                 current["session_id"] if current else ""),
             ).fetchall()
             for row in rows:
                 options.append(Option(
@@ -555,7 +570,11 @@ class Service:
                 )
                 if row is None or taken.rowcount != 1:
                     raise InvalidState("session is full")
-                c.execute("UPDATE orders SET session_starts_at=? WHERE id=?", (row["starts_at"], order_id))
+                self._release_seat(c, order_id)
+                c.execute(
+                    "INSERT INTO order_bookings (order_id, session_id, starts_at) VALUES (?,?,?)",
+                    (order_id, session_id, row["starts_at"]),
+                )
                 status = "moved"
             request_id = uuid.uuid4().hex
             c.execute(
@@ -729,9 +748,11 @@ class Service:
 
     def _case_row(self, c, tail: str, args: tuple):
         return c.execute(
-            "SELECT r.*, d.message, d.summary, o.session_name, j.state AS job_state, j.refund_id, j.actor"
+            "SELECT r.*, d.message, d.summary, o.session_name, j.state AS job_state, j.refund_id, j.actor,"
+            " b.starts_at AS booking_starts_at"
             " FROM confirmed_requests r JOIN request_drafts d ON d.id=r.draft_id"
-            " JOIN orders o ON o.id=r.order_id LEFT JOIN refund_jobs j ON j.id=r.job_id " + tail,
+            " JOIN orders o ON o.id=r.order_id LEFT JOIN refund_jobs j ON j.id=r.job_id"
+            " LEFT JOIN order_bookings b ON b.order_id=r.order_id " + tail,
             args,
         )
 
@@ -761,6 +782,7 @@ class Service:
             job_state=row["job_state"],
             refund_id=row["refund_id"],
             actor=row["actor"],
+            booking_starts_at=_time(row["booking_starts_at"]) if row["booking_starts_at"] else None,
         )
 
     def latest_delegation(self) -> DelegationView | None:
