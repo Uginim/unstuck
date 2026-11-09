@@ -1,0 +1,17 @@
+{% extends 'base.html' %}{% block content %}
+<section class="intro"><p class="eyebrow">Flowers, with a little help</p><h1>Tell us what<br>you have in mind.</h1><p>Ask for flowers and a quantity. If stock is short, choose from the shop’s approved alternatives.</p><p class="muted">Delivery dates are requests, not confirmed arrangements. Check timing with the seller.</p></section>
+<div class="shop-layout"><section aria-labelledby="chat-title"><h2 id="chat-title">Your conversation</h2>
+{% if conversation %}<div class="messages" aria-live="polite">{% for role, body in conversation.messages %}<article class="message {{ 'customer' if role == 'customer' else 'agent' }}"><h3>{{ 'You' if role == 'customer' else 'AI reply' }}</h3><p>{{ body }}</p></article>{% endfor %}</div>
+{% if conversation.reply_was_replaced %}<p class="notice" role="status">The AI reply was replaced because its amounts did not match the available offers.</p>{% endif %}
+<p class="muted">AI replies are guidance. Review the products, quantities and totals in the offer cards before choosing.</p>
+{% if conversation.offers %}<h2>Choose your flowers</h2><p>Nothing is reserved until you choose. Stock is checked again at that point.</p><div class="offers">
+{% for offer in conversation.offers %}<article class="offer {% if offer.id == conversation.suggested_offer %}suggested{% endif %}">
+{% if offer.id == conversation.suggested_offer %}<p class="tag">AI suggestion · Your choice</p>{% endif %}<h3>{{ offer.kind|offer_label }}</h3>
+<ul>{% for line in offer.lines %}<li><span>{{ line.qty }} × {{ line.name }}</span><span>{{ line.unit_cents|usd }} each</span></li>{% endfor %}</ul>
+<p class="total">{{ offer.total_cents|usd }}</p><p class="muted">Offer expires <time datetime="{{ offer.expires_at.isoformat() }}">{{ offer.expires_at.strftime('%d %b %Y, %H:%M UTC') }}</time></p>
+<form action="/choose" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="offer" value="{{ offer.id }}"><button type="submit">Reserve this selection</button></form></article>{% endfor %}</div>
+{% else %}<p class="notice">No offers are available for that request. Try a different flower or quantity.</p>{% endif %}
+{% else %}<p class="prompt">Try “12 peony bouquets for tomorrow”.</p>{% endif %}
+<form class="compose" action="/message" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><label for="message">What would you like?</label><textarea id="message" name="message" rows="3" maxlength="2000" required placeholder="Flowers, quantity, and any questions…"></textarea><button type="submit">Ask the shop</button></form>
+</section><aside aria-labelledby="catalog-title"><p class="eyebrow">On the flower stand</p><h2 id="catalog-title">Available now</h2><ul class="catalog">{% for product in catalog %}<li><h3>{{ product.name }}</h3><p>{{ product.unit_cents|usd }} <span class="stock">{{ product.stock }} available</span></p></li>{% endfor %}</ul><p class="muted">Availability excludes reserved stock and can change before checkout.</p></aside></div>
+{% endblock %}
