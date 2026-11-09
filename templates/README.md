@@ -9,3 +9,10 @@ Delegation expiry accepts an ISO timestamp with an explicit timezone, for exampl
 The existing `operator.html` and `customer.html` remain standalone synthetic layout examples, distinct from the connected templates. Their `preview.js` never sends payment or model requests. Connected pages do not load this script.
 
 Responsive CSS, native forms/disclosures, focus indicators and labels are included. HTTP tests cover customer confirmation, seller login, approval, delegation start/stop, reconciliation, stale versions, authorization and escaping. Real browser phone-width rendering and keyboard navigation have not been verified; do not treat HTTP checks as visual acceptance.
+
+
+Conversation UI uses `converse` and `choose`. Only service-provided `ConversationView.options` generate choice forms; their integer cents and timestamps supply option values, with en/ko button copy selected from `language`. AI responses are escaped plain text labeled `AI reply`, with a notice for `reply_was_replaced`. A suggested option is visually marked but never automatically selected or submitted. Existing `/confirm` is retained for prior callers; the conversation page uses `/choose` exclusively. Customer results still exclude all seller delegation details.
+
+The morning timeline renders the service events chronologically on the server. An external same-origin script provides optional replay/pause/show-all controls with no network calls, preserving the existing CSP. Without JavaScript the entire list remains visible. Booking moved/kept records explicitly say no refund was sent.
+
+Phone CSS review: 320–420px uses a single-column summary, wrapping navigation/buttons and long conversation/event text; all grid children can shrink. Browser-host inventory currently fails with “The browser access host is unavailable”, so actual phone rendering and keyboard playback remain unverified. The replay logic has dependency-free Node tests: `node --test tests/timeline.test.cjs`.

@@ -37,19 +37,49 @@ SELLER_REASONS = {
 }
 views.env.filters['seller_reason'] = lambda reason: SELLER_REASONS.get(reason, 'This request needs review.')
 
+def timeline_detail(detail):
+    reason, separator, rest = detail.partition(' ')
+    return SELLER_REASONS[reason] + (' ' + rest if separator else '') if reason in SELLER_REASONS else detail
 
-def customer_result(case, order_id):
+views.env.filters['timeline_detail'] = timeline_detail
+
+
+UI_TEXT = {
+    'en': {'send': 'Send message', 'refund': 'Confirm refund request', 'move': 'Confirm date change',
+           'keep': 'Keep my booking', 'suggested': 'AI suggestion', 'you': 'You',
+           'choose': 'Choose what happens next', 'message': 'Your message',
+           'confirm': 'Choosing a button confirms that action. Availability is checked again when you choose.',
+           'replaced': 'The AI reply was replaced because it did not match the available amounts. Use the options below.',
+           'moved': 'Booking moved', 'kept': 'Booking kept', 'no_money': 'No refund was sent.'},
+    'ko': {'send': '메시지 보내기', 'refund': '환불 요청 확정', 'move': '일정 변경 확정',
+           'keep': '예약 유지', 'suggested': 'AI 제안', 'you': '나',
+           'choose': '원하는 처리를 선택하세요', 'message': '문의 내용',
+           'confirm': '버튼을 누르면 해당 요청이 확정됩니다. 선택 시 가능 여부를 다시 확인합니다.',
+           'replaced': 'AI 답변의 금액이 제공 가능한 선택지와 일치하지 않아 답변을 교체했습니다. 아래 선택지를 확인하세요.',
+           'moved': '예약 일정 변경 완료', 'kept': '예약 유지 완료', 'no_money': '환불은 실행되지 않았습니다.'},
+}
+
+
+def language_key(language):
+    return 'ko' if str(language).lower().split('-')[0] == 'ko' else 'en'
+
+
+views.env.filters['case_status'] = lambda state: {'moved': 'Booking moved', 'kept': 'Booking kept'}.get(state, state.replace('_', ' '))
+
+def customer_result(case, order_id, language="en"):
     """Explicit public fields only; never pass seller evidence into a customer template."""
     state = {
         'completed': 'Refund completed', 'paypal_pending': 'Refund pending',
         'unknown': 'Result unconfirmed', 'failed': 'Refund not completed',
         'reserved': 'Refund processing', 'executing': 'Refund processing',
     }.get(case.job_state)
+    if case.status in ('moved', 'kept'):
+        state = UI_TEXT[language_key(language)][case.status]
     if state is None:
         state = 'Request declined' if case.status == 'rejected_policy' else 'The seller will review your request'
         if case.reason == 'already_refunded': state = 'Already refunded'
     return {'status': state, 'amount_cents': case.amount_cents,
-            'order_id': order_id, 'refund_id': case.refund_id}
+            'order_id': order_id, 'refund_id': case.refund_id, 'no_money': case.status in ('moved', 'kept')}
 
 
 
@@ -64,8 +94,9 @@ def render(request: Request, page: str, *, status=200, **values):
         seller_signed_in = True
     except HTTPException:
         seller_signed_in = False
+    language = language_key(values.pop('language', 'en'))
     response = views.TemplateResponse(request=request, name=page, context={
-        'mode': request.app.state.paypal_mode, 'csrf': csrf, 'seller_signed_in': seller_signed_in, **values,
+        'language': language, 'ui': UI_TEXT[language], 'mode': request.app.state.paypal_mode, 'csrf': csrf, 'seller_signed_in': seller_signed_in, **values,
     }, status_code=status)
     response.set_cookie('daybreak_csrf', csrf, httponly=True, samesite='strict',
                         secure=secure_cookie(request))
@@ -137,6 +168,11 @@ async def css():
     return FileResponse(ROOT / 'static/daybreak.css', media_type='text/css')
 
 
+@router.get('/static/timeline.js')
+async def timeline_script():
+    return FileResponse(ROOT / 'static/timeline.js', media_type='text/javascript')
+
+
 @router.get('/')
 async def home():
     return RedirectResponse('/seller', status_code=303)
@@ -144,16 +180,17 @@ async def home():
 
 @router.get('/order/{token}')
 async def customer(request: Request, token: str, order_id=Depends(require_order)):
-    return render(request, 'request.html', token=token, draft=None, result=None)
+    return render(request, 'request.html', token=token, conversation=None, result=None)
 
 
 @router.post('/order/{token}/message')
 async def message(request: Request, token: str, order_id=Depends(require_order), data=Depends(form), svc=Depends(service)):
     message_text = text(data, 'message')
     draft_id = data.get('draft_id')
-    draft = (await svc.edit_message(text(data, 'draft_id', 200), order_id, message_text)
-             if draft_id else await svc.submit_message(order_id, message_text))
-    return render(request, 'request.html', token=token, draft=draft, result=None)
+    conversation = await svc.converse(order_id, message_text, text(data, 'draft_id', 200) if draft_id else None)
+    return render(request, 'request.html', token=token, conversation=conversation, result=None,
+                  language=conversation.language)
+
 
 
 @router.post('/order/{token}/confirm')
@@ -163,7 +200,19 @@ async def confirm(request: Request, token: str, order_id=Depends(require_order),
     except ValueError:
         raise InvalidInput('version') from None
     case = await svc.confirm(text(data, 'draft_id', 200), version, order_id)
-    return render(request, 'request.html', token=token, draft=None, result=customer_result(case, order_id))
+    return render(request, 'request.html', token=token, conversation=None, result=customer_result(case, order_id))
+
+
+@router.post('/order/{token}/choose')
+async def choose(request: Request, token: str, order_id=Depends(require_order), data=Depends(form), svc=Depends(service)):
+    try:
+        version = int(text(data, 'draft_version', 10))
+    except ValueError:
+        raise InvalidInput('version') from None
+    case = await svc.choose(text(data, 'draft_id', 200), version, order_id, text(data, 'option_id', 200))
+    language = language_key(data.get('language', 'en'))
+    return render(request, 'request.html', token=token, conversation=None,
+                  result=customer_result(case, order_id, language), language=language)
 
 
 @router.get('/login')
@@ -191,7 +240,8 @@ async def logout(data=Depends(form)):
 @router.get('/seller', dependencies=[Depends(require_seller)])
 async def dashboard(request: Request, svc=Depends(service)):
     return render(request, 'dashboard.html', summary=svc.morning_summary(), cases=svc.list_cases(),
-                  delegation=svc.latest_delegation(), auto_paused=svc.auto_paused())
+                  delegation=svc.latest_delegation(), auto_paused=svc.auto_paused(),
+                  timeline=sorted(svc.timeline(), key=lambda event: event.at))
 
 
 @router.get('/seller/cases/{request_id}', dependencies=[Depends(require_seller)])

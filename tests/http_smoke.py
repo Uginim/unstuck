@@ -70,7 +70,8 @@ def get(client,path):
 
 
 def submit(client,response,suffix,**values):
-    form=next(f for f in Forms(response.text).forms if f['action'].endswith(suffix))
+    form=next(f for f in Forms(response.text).forms if f['action'].endswith(suffix)
+              and (suffix != '/choose' or f['data'].get('option_id') == 'refund'))
     result=client.post(form['action'],data={**form['data'],**values})
     assert result.status_code in (200,303),(suffix,result.status_code)
     if result.status_code==303:
@@ -119,10 +120,12 @@ def run(fault=False):
                     expires=(datetime.now(timezone.utc)+timedelta(hours=7)).isoformat()
                     dashboard=submit(client,dashboard,'/seller/delegations',per_refund='50',total='100',expires_at=expires)
                     assert 'Latest delegation' in dashboard.text
+                    reviews={}
                     def request(order):
-                        page=get(client,signed_link(order,secret))
-                        review=submit(client,page,'/message',message='Please refund me')
-                        return submit(client,review,'/confirm')
+                        if order not in reviews:
+                            page=get(client,signed_link(order,secret))
+                            reviews[order]=submit(client,page,'/message',message='Please refund me')
+                        return submit(client,reviews[order],'/choose')
                     first=request('order-39')
                     if fault:
                         assert 'Result unconfirmed' in first.text

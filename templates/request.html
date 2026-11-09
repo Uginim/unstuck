@@ -1,12 +1,32 @@
 {% extends 'base.html' %}{% block content %}
 <div class="customer"><p class="eyebrow">Your workshop request</p><h1>Plans changed?</h1>
-{% if result %}<section class="panel"><h2>{{ result.status }}</h2><dl class="receipt"><div><dt>Amount</dt><dd>{{ result.amount_cents | usd }} USD</dd></div><div><dt>Workshop order</dt><dd>{{ result.order_id }}</dd></div>{% if result.refund_id %}<div><dt>Refund ID</dt><dd>{{ result.refund_id }}</dd></div>{% endif %}</dl></section><a href="/order/{{ token }}">Send another message</a>
-{% elif draft %}
-<section class="panel"><h2>Review before submitting</h2><p>{{ draft.summary }}</p><p>Request type: {{ draft.kind }}{% if draft.ambiguous %} · Needs review{% endif %}</p><p>Order: <strong>{{ draft.session_name }}</strong>, full amount <strong>{{ draft.amount_cents | usd }} USD</strong>.</p><p>The order sets the workshop and amount. Submitting does not guarantee a refund.</p>
-<form method="post" action="/order/{{ token }}/confirm"><input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="draft_id" value="{{ draft.draft_id }}"><input type="hidden" name="draft_version" value="{{ draft.version }}"><button type="submit">Confirm this request</button></form>
-</section>
+{% if result %}
+<section class="panel"><h2>{{ result.status }}</h2>
+{% if result.no_money %}<p>{{ ui.no_money }}</p>{% endif %}
+<dl class="receipt">{% if not result.no_money %}<div><dt>Amount</dt><dd>{{ result.amount_cents | usd }} USD</dd></div>{% endif %}<div><dt>Workshop order</dt><dd>{{ result.order_id }}</dd></div>{% if result.refund_id %}<div><dt>Refund ID</dt><dd>{{ result.refund_id }}</dd></div>{% endif %}</dl></section><a href="/order/{{ token }}">Send another message</a>
+{% else %}
+{% if conversation %}
+<h2>{{ conversation.session_name }}</h2>
+<ol class="conversation" aria-label="Conversation">
+{% for role, body in conversation.messages %}<li class="turn {% if role == 'agent' %}ai-turn{% endif %}"><h3>{{ 'AI reply' if role == 'agent' else ui.you }}</h3><p>{{ body }}</p></li>{% endfor %}
+</ol>
+{% if conversation.reply_was_replaced %}<p class="notice" role="status">{{ ui.replaced }}</p>{% endif %}
+<section class="panel" aria-labelledby="options-heading"><h2 id="options-heading">{{ ui.choose }}</h2><p class="hint">{{ ui.confirm }}</p>
+<p class="hint">AI replies are conversational guidance. The amounts and dates in these options come from the booking service.</p>
+<div class="options">
+{% for option in conversation.options %}
+<form method="post" action="/order/{{ token }}/choose" class="option {% if option.id == conversation.suggested_option %}suggested{% endif %}">
+<input type="hidden" name="csrf" value="{{ csrf }}"><input type="hidden" name="draft_id" value="{{ conversation.draft_id }}"><input type="hidden" name="draft_version" value="{{ conversation.version }}"><input type="hidden" name="option_id" value="{{ option.id }}"><input type="hidden" name="language" value="{{ language }}">
+{% if option.id == conversation.suggested_option %}<p class="badge">{{ ui.suggested }}</p>{% endif %}
+{% if option.amount_cents is not none %}<p class="option-value">{{ option.amount_cents | usd }} USD</p>{% endif %}
+{% if option.starts_at %}<p><time datetime="{{ option.starts_at.isoformat() }}">{{ option.starts_at.strftime('%Y-%m-%d %H:%M %Z') }}</time></p>{% endif %}
+<button type="submit">{{ ui[option.kind] }}</button>
+</form>
+{% else %}<p>No options are currently available. Send a message to ask for help.</p>{% endfor %}
+</div></section>
 {% endif %}
-{% if not result %}<section class="panel"><h2>{% if draft %}Edit and review again{% else %}Your message{% endif %}</h2>
-{% if mode == 'dummy' %}<p class="hint">Without an AI key, the dummy extractor recognizes “Please refund me”. Other wording may need review; it is not an AI evaluation.</p>{% endif %}
-<form method="post" action="/order/{{ token }}/message"><input type="hidden" name="csrf" value="{{ csrf }}">{% if draft %}<input type="hidden" name="draft_id" value="{{ draft.draft_id }}">{% endif %}<label for="message">How can we help?</label><textarea id="message" name="message" maxlength="8000" required></textarea><button type="submit">Review request</button></form></section>{% endif %}
-<p class="hint">Anyone holding your valid order link can manage this order. Keep it private. Questions alone do not authorize refunds.</p></div>{% endblock %}
+<section class="panel"><h2>{{ ui.message }}</h2>
+{% if mode == 'dummy' %}<p class="hint">Dummy PayPal, not Sandbox. Conversation responses in local tests may be scripted; they are not evidence of model quality.</p>{% endif %}
+<form method="post" action="/order/{{ token }}/message"><input type="hidden" name="csrf" value="{{ csrf }}">{% if conversation %}<input type="hidden" name="draft_id" value="{{ conversation.draft_id }}">{% endif %}<label for="message">{{ ui.message }}</label><textarea id="message" name="message" maxlength="8000" required></textarea><button type="submit">{{ ui.send }}</button></form></section>
+{% endif %}
+<p class="hint">Anyone holding your valid order link can manage this order. Keep it private. Messages alone do not authorize a refund or booking change.</p></div>{% endblock %}

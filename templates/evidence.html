@@ -1,5 +1,5 @@
-<h2>{{ case.amount_cents | usd }} · {{ (case.job_state or case.status) | replace('_', ' ') }}</h2>
-<p>{{ case.reason | seller_reason }}</p>
+<h2>{{ case.amount_cents | usd }} · {{ (case.job_state or case.status) | case_status }}</h2>
+{% if case.status in ['moved','kept'] %}<p>No refund sent.</p>{% else %}<p>{{ case.reason | seller_reason }}</p>{% endif %}
 {% if case.reason == 'over_total' and summary.remaining_delegation_cents is not none %}<p>Current remaining automatic allowance: {{ summary.remaining_delegation_cents | usd }}.</p>{% endif %}
 {% if case.job_state == 'unknown' %}<p class="notice">Result unconfirmed. The reservation stays held. This is not a completed or failed refund.</p>{% endif %}
 {% if case.job_state == 'paypal_pending' %}<p class="notice">The payment provider reports pending. Funds are still reserved; completion has not been confirmed.</p>{% endif %}

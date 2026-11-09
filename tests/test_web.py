@@ -7,8 +7,15 @@ from fastapi import FastAPI
 
 from daybreak.auth import make_order_token, make_seller_cookie
 from daybreak.web import router
+from daybreak.execute import Service
+from daybreak.ports import AgentTurn
 from test_integration import World, NOW
 from datetime import timedelta
+
+
+class ScriptedAgent:
+    async def respond(self, history, session_name, options):
+        return AgentTurn('refund', False, 'Refund request', 'Please choose an available option.', 'en', 'refund')
 
 
 @pytest.fixture
@@ -16,6 +23,7 @@ async def web(tmp_path, monkeypatch):
     monkeypatch.setenv('DAYBREAK_SECRET', 'synthetic-test-signing-secret-32-characters')
     monkeypatch.setenv('DAYBREAK_SELLER_PASSWORD', 'synthetic-password')
     w=World(tmp_path/'web.db')
+    w.service=Service(w.db,w.client,w.extractor,w.clock,agent=ScriptedAgent())
     app=FastAPI()
     app.state.service=w.service
     app.state.paypal_mode='dummy'
@@ -38,7 +46,7 @@ async def test_customer_confirmation_and_seller_approval(web):
     r=await c.get(link)
     assert 'Dummy PayPal, not Sandbox' in r.text
     r=await c.post(link+'/message',data={'message':'Please refund me','csrf':csrf(c)})
-    assert '$39.00' in r.text and 'Review before submitting' in r.text
+    assert '$39.00' in r.text and 'Choose what happens next' in r.text
     draft=w.sql('SELECT id,version FROM request_drafts')[0]
     r=await c.post(link+'/confirm',data={'draft_id':draft[0],'draft_version':draft[1],'csrf':csrf(c)})
     assert 'The seller will review your request' in r.text
