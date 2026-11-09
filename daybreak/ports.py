@@ -67,6 +67,11 @@ class AgentTurn:
     reply: str  # in the customer's language; never authoritative
     language: str  # BCP 47, e.g. "en", "ko"
     suggested_option: str | None = None
+    # From the API response's usage. A dummy agent leaves model empty, so nothing is recorded.
+    model: str = ""
+    input_tokens: int = 0
+    output_tokens: int = 0
+    cost_micro_usd: int = 0
 
 
 class AgentPort(Protocol):
@@ -138,6 +143,17 @@ class ConversationView:
 
 
 @dataclass(frozen=True)
+class AiUsage:
+    """Measured totals. conversations is the denominator for any per-request figure."""
+    model: str | None
+    conversations: int
+    turns: int
+    input_tokens: int
+    output_tokens: int
+    cost_micro_usd: int
+
+
+@dataclass(frozen=True)
 class TimelineEvent:
     at: datetime
     request_id: str
@@ -165,6 +181,7 @@ class RefundService(Protocol):
     async def converse(self, order_id: str, message: str, draft_id: str | None = None) -> ConversationView: ...
     async def choose(self, draft_id: str, draft_version: int, order_id: str, option_id: str) -> CaseView: ...
     def timeline(self, limit: int = 100) -> list[TimelineEvent]: ...
+    def ai_usage(self) -> AiUsage: ...
     async def start_delegation(
         self, per_refund_limit_cents: int, total_limit_cents: int, expires_at: datetime
     ) -> str: ...

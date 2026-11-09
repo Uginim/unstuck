@@ -33,6 +33,7 @@ from .paypal import cents_to_value
 from .ports import (
     AgentPort,
     AgentTurn,
+    AiUsage,
     CaptureFacts,
     ConversationView,
     Option,
@@ -483,6 +484,12 @@ class Service:
                     "INSERT INTO conversation_messages (id, draft_id, role, body, created_at) VALUES (?,?,?,?,?)",
                     (uuid.uuid4().hex, draft_id, role, body, stamp),
                 )
+            if turn.model:
+                c.execute(
+                    "INSERT INTO model_usage (draft_id, model, input_tokens, output_tokens, cost_micro_usd, at)"
+                    " VALUES (?,?,?,?,?,?)",
+                    (draft_id, turn.model, turn.input_tokens, turn.output_tokens, turn.cost_micro_usd, stamp),
+                )
             version = c.execute("SELECT version FROM request_drafts WHERE id=?", (draft_id,)).fetchone()["version"]
             messages = [(r["role"], r["body"]) for r in c.execute(
                 "SELECT role, body FROM conversation_messages WHERE draft_id=? ORDER BY rowid", (draft_id,)
@@ -559,6 +566,15 @@ class Service:
             )
             self._event(c, request_id, now, status, option.label)
             return request_id
+
+    def ai_usage(self) -> AiUsage:
+        with self._tx() as c:
+            row = c.execute(
+                "SELECT MAX(model) AS model, COUNT(DISTINCT draft_id) AS conversations, COUNT(*) AS turns,"
+                " COALESCE(SUM(input_tokens),0) AS i, COALESCE(SUM(output_tokens),0) AS o,"
+                " COALESCE(SUM(cost_micro_usd),0) AS cost FROM model_usage"
+            ).fetchone()
+            return AiUsage(row["model"], row["conversations"], row["turns"], row["i"], row["o"], row["cost"])
 
     def timeline(self, limit: int = 100) -> list[TimelineEvent]:
         with self._tx() as c:

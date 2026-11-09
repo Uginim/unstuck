@@ -107,6 +107,17 @@ CREATE TABLE IF NOT EXISTS conversation_messages (
   created_at TEXT NOT NULL
 );
 
+-- Measured model spend per turn, from the API's usage field. Never estimated.
+CREATE TABLE IF NOT EXISTS model_usage (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  draft_id TEXT NOT NULL REFERENCES request_drafts(id),
+  model TEXT NOT NULL,
+  input_tokens INTEGER NOT NULL,
+  output_tokens INTEGER NOT NULL,
+  cost_micro_usd INTEGER NOT NULL,
+  at TEXT NOT NULL
+);
+
 -- What the seller replays in the morning. Written in the same transaction as the change.
 CREATE TABLE IF NOT EXISTS case_events (
   id INTEGER PRIMARY KEY AUTOINCREMENT,

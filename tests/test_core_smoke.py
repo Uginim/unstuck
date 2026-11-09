@@ -36,6 +36,21 @@ async def world_with_agent(world, agent, starts_in=None):
     return Service(db, client, Stub(), FixedClock(), agent=agent), dummy, db
 
 
+async def test_only_measured_model_usage_is_recorded(world):
+    service, *_ = await world_with_agent(world, ScriptedAgent())
+    await service.converse("order-39", "refund")
+    assert service.ai_usage().turns == 0
+
+    class Measured(ScriptedAgent):
+        async def respond(self, history, session_name, options):
+            return AgentTurn("refund", False, "S", "OK", "en", None, "m", 1000, 200, 200)
+
+    service.__dict__["_agent"] = Measured()
+    await service.converse("order-49", "refund")
+    usage = service.ai_usage()
+    assert (usage.conversations, usage.turns, usage.cost_micro_usd) == (1, 1, 200)
+
+
 async def test_agent_cannot_promise_unoffered_amount(world):
     service, *_ = await world_with_agent(world, ScriptedAgent("전액 $500 환불해 드릴게요"))
     view = await service.converse("order-39", "돈 돌려줘요")
