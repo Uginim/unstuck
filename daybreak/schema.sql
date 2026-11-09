@@ -53,7 +53,7 @@ CREATE TABLE IF NOT EXISTS confirmed_requests (
   policy_version INTEGER NOT NULL REFERENCES policies(version),
   delegation_id TEXT REFERENCES delegations(id),
   status TEXT NOT NULL CHECK (status IN
-    ('needs_review','rejected_policy','pending_approval','approved','linked','moved','kept')),
+    ('needs_review','rejected_policy','pending_approval','approved','linked','moved','kept','withdrawn')),
   reason TEXT NOT NULL,
   job_id TEXT REFERENCES refund_jobs(id),
   UNIQUE (draft_id, draft_version)

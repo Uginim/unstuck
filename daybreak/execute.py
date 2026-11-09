@@ -238,6 +238,13 @@ class Service:
             if replay:
                 return replay["id"], None
 
+            if explicit or draft["kind"] == "refund":
+                waiting = c.execute(
+                    "SELECT id FROM confirmed_requests WHERE order_id=? AND status='pending_approval'", (order_id,)
+                ).fetchone()
+                if waiting:  # one order waits once, so the seller's total counts it once
+                    return waiting["id"], None
+
             order_row = self._order_row(c, order_id)
             now = self._clock.now()
             request_id = uuid.uuid4().hex
@@ -576,6 +583,13 @@ class Service:
                     (order_id, session_id, row["starts_at"]),
                 )
                 status = "moved"
+            # The customer chose to stay, so a refund still waiting must not be approvable later.
+            for open_row in c.execute(
+                "SELECT id FROM confirmed_requests WHERE order_id=? AND status IN ('pending_approval','needs_review')",
+                (order_id,),
+            ).fetchall():
+                c.execute("UPDATE confirmed_requests SET status='withdrawn' WHERE id=?", (open_row["id"],))
+                self._event(c, open_row["id"], now, "withdrawn", "Customer chose to stay")
             request_id = uuid.uuid4().hex
             c.execute(
                 "INSERT INTO confirmed_requests (id, draft_id, draft_version, order_id, kind, ambiguous, amount_cents,"

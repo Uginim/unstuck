@@ -165,6 +165,32 @@ async def test_completed_refund_returns_the_moved_seat(world):
     assert _seats(db, "order-39")["order-39-s1"] == 2
 
 
+@pytest.mark.parametrize("choice", ["move:order-29-s1", "keep"])
+async def test_choosing_to_stay_withdraws_the_waiting_refund(world, choice):
+    service, dummy, db = await world_with_agent(world, ScriptedAgent(kind="other"))
+    await service.start_delegation(1000, 10000, NOW + timedelta(hours=7))
+    waiting = await submit(service, "order-29")
+    assert waiting.status == "pending_approval"
+    assert service.morning_summary().pending_approval_cents == 2900
+    view = await service.converse("order-29", "actually I will stay")
+    await service.choose(view.draft_id, view.version, "order-29", choice)
+    assert service.get_case(waiting.request_id).status == "withdrawn"
+    assert service.morning_summary().pending_approval_cents == 0
+    with pytest.raises(InvalidState):
+        await service.approve(waiting.request_id)
+    assert dummy.refund_calls == 0
+
+
+async def test_asking_twice_does_not_double_the_waiting_amount(world):
+    service, dummy, db = await world_with_agent(world, ScriptedAgent())
+    await service.start_delegation(1000, 10000, NOW + timedelta(hours=7))
+    first = await submit(service, "order-29")
+    view = await service.converse("order-29", "refund me please")
+    again = await service.choose(view.draft_id, view.version, "order-29", "refund")
+    assert again.request_id == first.request_id
+    assert service.morning_summary().pending_approval_cents == 2900
+
+
 async def test_partial_refund_inside_partial_window(world):
     service, dummy, db, client = world
     agent_service = Service(db, client, Stub(), FixedClock(), agent=ScriptedAgent())
