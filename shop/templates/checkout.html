@@ -1,0 +1,20 @@
+{% extends 'base.html' %}{% block title %}Your checkout · Stem{% endblock %}{% block content %}
+<p class="eyebrow">Your selection</p><h1>{{ checkout.state|state_label }}</h1>
+{% if cancelled %}<p class="notice">You left approval. This is not a confirmed cancellation. Your reservation remains subject to the shop’s expiry checks.</p>{% endif %}
+{% if returned %}<p class="notice">You returned from approval. Returning alone is not proof of payment. Complete checkout below to check the recorded result.</p>{% endif %}
+<section class="receipt"><ul>{% for line in checkout.lines %}<li><span>{{ line.qty }} × {{ line.name }}</span><span>{{ line.unit_cents|usd }} each</span></li>{% endfor %}</ul><p class="total">{{ checkout.total_cents|usd }}</p>
+{% if checkout.state == 'paid' %}<p class="notice">{% if mode == 'dummy' %}Simulated payment confirmed. This is a dummy result.{% else %}The payment service reports this checkout as paid.{% endif %}</p><p>Capture ID <code>{{ checkout.capture_id }}</code></p>
+{% elif checkout.state in ['unknown', 'capturing'] %}<p class="notice">The result is not confirmed. Your stock remains reserved. Do not create a second checkout to retry this payment.</p>
+{% elif checkout.state in ['failed', 'expired'] %}<p>This checkout cannot continue. Ask the shop for fresh offers.</p>
+{% else %}<p>Reservation deadline <time datetime="{{ checkout.hold_expires_at.isoformat() }}">{{ checkout.hold_expires_at.strftime('%d %b %Y, %H:%M UTC') }}</time>. Expiry is checked by the payment service.</p>{% endif %}
+<p class="muted">Checkout <code>{{ checkout.id }}</code></p>
+{% if checkout.state == 'awaiting_payment' %}
+{% if mode == 'dummy' and dummy_ready %}<form action="/checkout/dummy-approve" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Simulate buyer approval · Dummy PayPal</button></form>
+{% elif approval %}<a class="button" href="{{ approval }}" rel="noreferrer">Continue to PayPal Sandbox</a>
+{% else %}<p class="notice">Approval link unavailable. Ask the seller to check the checkout setup.</p>{% endif %}
+<form action="/checkout/complete" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button class="secondary" type="submit">Complete checkout after approval</button></form>
+{% endif %}
+{% if checkout.state in ['held', 'unknown'] %}<form action="/checkout/refresh" method="post"><input type="hidden" name="csrf" value="{{ csrf }}"><button type="submit">Check this checkout again</button></form>{% endif %}
+{% if checkout.state == 'capturing' %}<a class="button secondary" href="/checkout">Refresh status</a>{% endif %}
+</section><p><a href="/">Back to the flower stand</a></p>
+{% endblock %}

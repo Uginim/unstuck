@@ -1,0 +1,8 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{% block title %}Stem · Flower shop{% endblock %}</title><link rel="stylesheet" href="/static/shop/shop.css"></head>
+<body><a class="skip" href="#main">Skip to content</a>
+<div class="mode" role="status">{% if mode == 'dummy' %}<strong>Dummy PayPal, not Sandbox</strong> · Simulated checkout. No money moves.{% elif mode == 'sandbox' %}<strong>PayPal Sandbox</strong> · Test payments, no real money.{% else %}<strong>Payment mode unverified</strong>{% endif %}{% if agent_mode == 'dummy' %} · Scripted conversation{% endif %}</div>
+<header><a class="brand" href="/">stem<span>FLOWER SHOP</span></a><nav aria-label="Main navigation"><a href="/checkout">Your checkout</a><a href="{{ '/seller' if signed_in else '/seller/login' }}">{{ 'Seller desk' if signed_in else 'Seller sign in' }}</a></nav></header>
+<main id="main">{% block content %}{% endblock %}</main>
+<footer>Fictional flower shop · All prices in USD · A message alone does not place an order.</footer>
+</body></html>
