@@ -60,6 +60,7 @@ class CaseView:
     customer_requested: str
     seller_allowed: str
     paypal_confirmed: str | None
+    job_id: str | None
     job_state: str | None
     refund_id: str | None
     actor: Literal["agent", "seller"] | None
@@ -84,6 +85,16 @@ class MorningSummary:
     remaining_delegation_cents: int | None
 
 
+class ServiceError(Exception):
+    """Base for caller errors. Provider failures are not errors: they appear as CaseView states."""
+
+
+class NotFound(ServiceError): ...  # HTTP 404: also used when the order does not own the resource
+class StaleVersion(ServiceError): ...  # HTTP 409: the customer must re-confirm the current version
+class InvalidState(ServiceError): ...  # HTTP 409: e.g. approving a request not waiting for approval
+class InvalidInput(ServiceError): ...  # HTTP 422
+
+
 class RefundService(Protocol):
     """Implemented by execute.py. web.py calls these and duplicates no decisions or DB writes.
     order_id and seller authentication are resolved by auth.py before these are called."""
@@ -95,6 +106,7 @@ class RefundService(Protocol):
         self, per_refund_limit_cents: int, total_limit_cents: int, expires_at: datetime
     ) -> str: ...
     async def stop_delegation(self, delegation_id: str) -> None: ...
+    async def reconcile_job(self, job_id: str) -> None: ...  # seller only; same key and body
     def get_case(self, request_id: str) -> CaseView | None: ...
     def list_cases(self) -> list[CaseView]: ...
     def morning_summary(self) -> MorningSummary: ...

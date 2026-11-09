@@ -48,6 +48,8 @@ CREATE TABLE IF NOT EXISTS confirmed_requests (
   ambiguous INTEGER NOT NULL,
   amount_cents INTEGER NOT NULL,
   received_at TEXT NOT NULL,
+  policy_version INTEGER NOT NULL REFERENCES policies(version),
+  delegation_id TEXT REFERENCES delegations(id),
   status TEXT NOT NULL CHECK (status IN
     ('needs_review','rejected_policy','pending_approval','approved','linked')),
   reason TEXT NOT NULL,
