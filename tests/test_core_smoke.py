@@ -91,7 +91,7 @@ async def test_restart_marks_interrupted_unknown_and_pauses_auto(world):
     restarted = Service(db, client, Stub(), FixedClock())
     assert restarted.recover_on_start() == 1
     paused = await submit(restarted, "order-49")
-    assert (paused.status, paused.reason) == ("pending_approval", "delegation_stopped")
+    assert (paused.status, paused.reason) == ("pending_approval", "restore_reconciliation_required")
     await restarted.reconcile_job(case.job_id)
     assert (await submit(restarted, "order-29")).job_state == "completed"
 

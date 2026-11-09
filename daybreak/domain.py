@@ -19,6 +19,7 @@ Reason = Literal[
     "delegation_expired",
     "over_per_refund",
     "over_total",
+    "restore_reconciliation_required",
 ]
 JobState = Literal["reserved", "executing", "paypal_pending", "completed", "failed", "unknown"]
 

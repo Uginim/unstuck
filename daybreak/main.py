@@ -40,6 +40,8 @@ def create_app() -> FastAPI:
     if mode == "dummy":
         seed(db_path)
     service.recover_on_start()
+    if os.environ.get("DAYBREAK_RESTORED") == "1":  # set once when starting from a backup
+        service.mark_restored()
 
     app = FastAPI(title="Daybreak")
     app.state.service = service

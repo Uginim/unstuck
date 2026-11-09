@@ -9,7 +9,7 @@ import sqlite3
 import uuid
 from contextlib import contextmanager
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 from .domain import (
@@ -30,6 +30,7 @@ from .ports import (
     CaptureFacts,
     CaseView,
     Clock,
+    DelegationView,
     DraftView,
     Extraction,
     ExtractorPort,
@@ -44,6 +45,11 @@ from .ports import (
 
 SCHEMA = Path(__file__).with_name("schema.sql")
 PAUSE_FLAG = "auto_execution_paused"
+PAUSE_RESTART, PAUSE_RESTORE = "restart", "restore"
+# PayPal's docs mention up to 45 days of key retention, but not as a guarantee for this API.
+# Past this shorter window a resend could pay twice, so only a manual check is left.
+RETRY_WINDOW = timedelta(hours=24)
+RETRY_WINDOW_PASSED = "retry_window_passed"
 STATUS_BY_OUTCOME = {
     "execute": "approved",
     "pending_approval": "pending_approval",
@@ -258,12 +264,15 @@ class Service:
         decision = decide(
             req, order, policy, _delegation(delegation_row), Usage(held), existing, evaluated_at=now, actor=actor
         )
-        if decision.outcome != "execute":
+        if decision.outcome not in ("execute", "pending_approval"):
             return decision
+        # "Eligible" claims need current PayPal facts, including when only waiting for approval.
+        if facts is not None and facts.status == "REFUNDED":
+            return Decision("needs_review", "already_refunded", decision.amount_cents)
         if not self._facts_match(facts, order):
             return Decision("needs_review", "insufficient_order_facts", decision.amount_cents)
-        if actor == "agent" and self._paused(c):
-            return Decision("pending_approval", "delegation_stopped", decision.amount_cents)
+        if decision.outcome == "execute" and actor == "agent" and self._paused(c):
+            return Decision("pending_approval", "restore_reconciliation_required", decision.amount_cents)
         return decision
 
     @staticmethod
@@ -276,8 +285,7 @@ class Service:
         )
 
     def _paused(self, c: sqlite3.Connection) -> bool:
-        row = c.execute("SELECT value FROM system_flags WHERE key=?", (PAUSE_FLAG,)).fetchone()
-        return bool(row and row["value"] == "1")
+        return c.execute("SELECT 1 FROM system_flags WHERE key=?", (PAUSE_FLAG,)).fetchone() is not None
 
     def _reserve(self, c, request_id, order_row, decision, actor, delegation_id, now) -> _Send | None:
         if decision.outcome != "execute":
@@ -431,8 +439,24 @@ class Service:
             )
             open_jobs = c.execute("SELECT COUNT(*) AS n FROM refund_jobs WHERE state='unknown'").fetchone()["n"]
             if open_jobs:
-                c.execute("INSERT OR REPLACE INTO system_flags (key, value) VALUES (?, '1')", (PAUSE_FLAG,))
+                c.execute("INSERT OR IGNORE INTO system_flags (key, value) VALUES (?, ?)", (PAUSE_FLAG, PAUSE_RESTART))
             return open_jobs
+
+    def mark_restored(self) -> None:
+        """A restored database may predate refunds that PayPal completed, so nothing local proves
+        it is complete. Auto-execution stays off until the seller resumes it after checking."""
+        with self._tx() as c:
+            c.execute("INSERT OR REPLACE INTO system_flags (key, value) VALUES (?, ?)", (PAUSE_FLAG, PAUSE_RESTORE))
+
+    def auto_paused(self) -> bool:
+        with self._tx() as c:
+            return self._paused(c)
+
+    def resume_auto(self) -> None:
+        with self._tx() as c:
+            if c.execute("SELECT 1 FROM refund_jobs WHERE state='unknown' LIMIT 1").fetchone():
+                raise InvalidState("unknown jobs remain")
+            c.execute("DELETE FROM system_flags WHERE key=?", (PAUSE_FLAG,))
 
     async def reconcile_job(self, job_id: str) -> None:
         with self._tx() as c:
@@ -448,6 +472,13 @@ class Service:
             order_row["currency"], attempt["paypal_request_id"],
         )
         if job["state"] == "unknown":
+            if self._clock.now() - _time(attempt["started_at"]) > RETRY_WINDOW:
+                self._log.write("retry_refused", job_id=job_id, key=send.key)
+                with self._tx() as c:
+                    c.execute(
+                        "UPDATE refund_attempts SET error_code=? WHERE id=?", (RETRY_WINDOW_PASSED, attempt["id"])
+                    )
+                return
             await self._run(send)  # same key and body
         elif job["state"] == "paypal_pending" and job["refund_id"]:
             result = await self._paypal.get_refund(job["refund_id"])
@@ -458,7 +489,7 @@ class Service:
         with self._tx() as c:
             remaining = c.execute("SELECT COUNT(*) AS n FROM refund_jobs WHERE state='unknown'").fetchone()["n"]
             if not remaining:
-                c.execute("DELETE FROM system_flags WHERE key=?", (PAUSE_FLAG,))
+                c.execute("DELETE FROM system_flags WHERE key=? AND value=?", (PAUSE_FLAG, PAUSE_RESTART))
 
     # Views
 
@@ -510,6 +541,22 @@ class Service:
             actor=row["actor"],
         )
 
+    def latest_delegation(self) -> DelegationView | None:
+        with self._tx() as c:
+            d = c.execute("SELECT * FROM delegations ORDER BY started_at DESC LIMIT 1").fetchone()
+            if d is None:
+                return None
+            marks = ",".join("?" * len(HOLDS_LIMIT))
+            held = c.execute(
+                f"SELECT COALESCE(SUM(amount_cents),0) AS s FROM refund_jobs WHERE actor='agent'"
+                f" AND delegation_id=? AND state IN ({marks})",
+                (d["id"], *sorted(HOLDS_LIMIT)),
+            ).fetchone()["s"]
+            return DelegationView(
+                d["id"], d["per_refund_limit_cents"], d["total_limit_cents"], held,
+                _time(d["expires_at"]), _time(d["stopped_at"]),
+            )
+
     def morning_summary(self) -> MorningSummary:
         with self._tx() as c:
             total = lambda actor: c.execute(
@@ -519,14 +566,7 @@ class Service:
             pending = c.execute(
                 "SELECT COALESCE(SUM(amount_cents),0) AS s FROM confirmed_requests WHERE status='pending_approval'"
             ).fetchone()["s"]
-            d = c.execute("SELECT * FROM delegations ORDER BY started_at DESC LIMIT 1").fetchone()
-            remaining = None
-            if d:
-                marks = ",".join("?" * len(HOLDS_LIMIT))
-                held = c.execute(
-                    f"SELECT COALESCE(SUM(amount_cents),0) AS s FROM refund_jobs WHERE actor='agent'"
-                    f" AND delegation_id=? AND state IN ({marks})",
-                    (d["id"], *sorted(HOLDS_LIMIT)),
-                ).fetchone()["s"]
-                remaining = d["total_limit_cents"] - held
-            return MorningSummary(total("agent"), total("seller"), pending, remaining)
+            auto, manual = total("agent"), total("seller")
+        d = self.latest_delegation()
+        remaining = d.total_limit_cents - d.held_cents if d else None
+        return MorningSummary(auto, manual, pending, remaining)

@@ -85,6 +85,16 @@ class MorningSummary:
     remaining_delegation_cents: int | None
 
 
+@dataclass(frozen=True)
+class DelegationView:
+    id: str
+    per_refund_limit_cents: int
+    total_limit_cents: int
+    held_cents: int
+    expires_at: datetime
+    stopped_at: datetime | None
+
+
 class ServiceError(Exception):
     """Base for caller errors. Provider failures are not errors: they appear as CaseView states."""
 
@@ -107,6 +117,9 @@ class RefundService(Protocol):
     ) -> str: ...
     async def stop_delegation(self, delegation_id: str) -> None: ...
     async def reconcile_job(self, job_id: str) -> None: ...  # seller only; same key and body
+    def resume_auto(self) -> None: ...  # seller only; InvalidState while unknown jobs remain
+    def auto_paused(self) -> bool: ...
+    def latest_delegation(self) -> DelegationView | None: ...
     def get_case(self, request_id: str) -> CaseView | None: ...
     def list_cases(self) -> list[CaseView]: ...
     def morning_summary(self) -> MorningSummary: ...

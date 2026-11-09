@@ -2,10 +2,12 @@
 
 The real PayPalClient runs against it, so parsing and error mapping are exercised.
 It reflects the spec, not observed Sandbox behavior, and results from it are never
-reported as Sandbox results.
+reported as Sandbox results. Modeling assumptions the spec does not guarantee: keys are
+kept indefinitely, and a capture reads REFUNDED immediately even while its refund is pending.
 """
 import json
 import uuid
+from decimal import Decimal
 
 import httpx
 
@@ -66,11 +68,17 @@ class DummyPayPal:
         if capture["status"] == "REFUNDED":
             return self._error(422, "CAPTURE_FULLY_REFUNDED")
 
+        amount = json.loads(request.content)["amount"]
+        if amount["currency_code"] != capture["amount"]["currency_code"]:
+            return self._error(422, "REFUND_CURRENCY_MISMATCH")
+        if Decimal(amount["value"]) > Decimal(capture["amount"]["value"]):
+            return self._error(422, "REFUND_AMOUNT_EXCEEDED")
+
         self.money_out_calls += 1
         refund = {
             "id": f"DUMMY-{uuid.uuid4().hex[:12].upper()}",
             "status": "PENDING" if fault == "pending" else "COMPLETED",
-            "amount": json.loads(request.content)["amount"],
+            "amount": amount,
         }
         self.refunds[refund["id"]] = refund
         self.by_request_id[key] = refund["id"]
@@ -81,4 +89,10 @@ class DummyPayPal:
 
     @staticmethod
     def _error(status: int, issue: str) -> httpx.Response:
-        return httpx.Response(status, json={"name": issue, "details": [{"issue": issue}]})
+        names = {404: "RESOURCE_NOT_FOUND", 422: "UNPROCESSABLE_ENTITY", 500: "INTERNAL_SERVER_ERROR"}
+        return httpx.Response(status, json={
+            "name": names.get(status, issue),
+            "message": issue,
+            "debug_id": "dummy-debug-id",
+            "details": [{"issue": issue, "description": issue}],
+        })
