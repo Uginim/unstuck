@@ -95,7 +95,9 @@ async def test_delegation_forms_and_unknown_recheck(web):
     data={'per_refund':'50','total':'100','expires_at':(NOW+timedelta(hours=7)).isoformat(),'csrf':csrf(c)}
     assert (await c.post('/seller/delegations',data={**data,'per_refund':'0.001'})).status_code==422
     assert (await c.post('/seller/delegations',data=data)).status_code==303
-    delegation=c.cookies['daybreak_delegation']
+    delegation=w.service.latest_delegation().id
+    assert 'daybreak_delegation' not in c.cookies
+    assert delegation in (await c.get('/seller')).text
     w.dummy.faults=['lost']
     case=await w.submit()
     r=await c.get('/seller/cases/'+case.request_id)
@@ -155,3 +157,21 @@ def test_main_includes_router(tmp_path,monkeypatch):
     with TestClient(main.create_app()) as app:
         assert app.get('/health').json()['paypal_mode']=='dummy'
         assert 'Dummy PayPal, not Sandbox' in app.get('/login').text
+
+
+async def test_restore_pause_and_explicit_resume(web):
+    c,w=web
+    await w.delegate()
+    w.service.mark_restored()
+    seller(c)
+    r=await c.get('/seller')
+    assert 'Automatic execution is paused' in r.text
+    assert (await c.post('/seller/resume',data={'csrf':csrf(c)})).status_code==422
+    assert w.service.auto_paused()
+    assert (await c.post('/seller/resume',data={'csrf':csrf(c),'reviewed':'yes'})).status_code==303
+    assert not w.service.auto_paused()
+    w.dummy.faults=['lost']
+    await w.submit()
+    w.service.mark_restored()
+    assert (await c.post('/seller/resume',data={'csrf':csrf(c),'reviewed':'yes'})).status_code==409
+    assert w.service.auto_paused()

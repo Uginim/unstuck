@@ -29,3 +29,6 @@ build/
 .DS_Store
 .idea/
 .vscode/
+
+# Local evaluation artifacts and temporary synthetic databases
+.checks/

@@ -153,7 +153,7 @@ async def logout(data=Depends(form)):
 @router.get('/seller', dependencies=[Depends(require_seller)])
 async def dashboard(request: Request, svc=Depends(service)):
     return render(request, 'dashboard.html', summary=svc.morning_summary(), cases=svc.list_cases(),
-                  delegation_id=request.cookies.get('daybreak_delegation', ''))
+                  delegation=svc.latest_delegation(), auto_paused=svc.auto_paused())
 
 
 @router.get('/seller/cases/{request_id}', dependencies=[Depends(require_seller)])
@@ -184,14 +184,18 @@ async def start_delegation(request: Request, data=Depends(form), svc=Depends(ser
     except ValueError:
         raise InvalidInput('expiry') from None
     if expiry.tzinfo is None: raise InvalidInput('expiry requires timezone')
-    delegation_id = await svc.start_delegation(cents(text(data, 'per_refund', 20)), cents(text(data, 'total', 20)), expiry)
-    response = RedirectResponse('/seller', status_code=303)
-    # shortcut: service has no delegation read view; remember the last created ID in this browser until it does.
-    response.set_cookie('daybreak_delegation', delegation_id, httponly=True, samesite='strict', secure=secure_cookie(request))
-    return response
+    await svc.start_delegation(cents(text(data, 'per_refund', 20)), cents(text(data, 'total', 20)), expiry)
+    return RedirectResponse('/seller', status_code=303)
 
 
 @router.post('/seller/delegations/stop', dependencies=[Depends(require_seller)])
 async def stop_delegation(data=Depends(form), svc=Depends(service)):
     await svc.stop_delegation(text(data, 'delegation_id', 200))
+    return RedirectResponse('/seller', status_code=303)
+
+
+@router.post('/seller/resume', dependencies=[Depends(require_seller)])
+async def resume(data=Depends(form), svc=Depends(service)):
+    if data.get('reviewed') != 'yes': raise InvalidInput('review reconciliation first')
+    svc.resume_auto()
     return RedirectResponse('/seller', status_code=303)

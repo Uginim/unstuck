@@ -37,3 +37,13 @@ async def test_known_error_and_status_mapping(fault,expected):
         assert result.status==expected
         assert dummy.refund_calls==1
     finally: await client.aclose()
+
+
+async def test_currency_mismatch_uses_documented_issue():
+    dummy=DummyPayPal();dummy.add_capture('synthetic-capture',3900)
+    async with httpx.AsyncClient(transport=dummy.transport(),base_url='https://dummy.invalid') as client:
+        response=await client.post('/v2/payments/captures/synthetic-capture/refund',
+            headers={'PayPal-Request-Id':'synthetic-key'},json={'amount':{'value':'39.00','currency_code':'EUR'}})
+    assert response.status_code==422
+    # Both aliases are explicitly listed in the official schema's error catalog.
+    assert response.json()['details'][0]['issue'] in {'REFUND_CAPTURE_CURRENCY_MISMATCH', 'REFUND_CURRENCY_MISMATCH'}

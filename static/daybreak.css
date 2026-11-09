@@ -79,3 +79,4 @@ header{align-items:flex-start}
 @media(prefers-reduced-motion:reduce){*{scroll-behavior:auto}
 }
 form{margin:18px 0}form button{margin-top:14px}form label:not(:first-child){margin-top:14px}.case{padding:16px 0}.evidence dd{text-align:left;font-weight:400;overflow-wrap:anywhere}.authority input{min-width:0}.authority{min-width:0}.customer{overflow-wrap:anywhere}
+input[type=checkbox]{width:auto;margin-right:8px}.authority dd{overflow-wrap:anywhere;text-align:left}

@@ -249,6 +249,7 @@ async def test_catalog(case, world, monkeypatch):
         restored=Path(w.db).with_name('restored.db')
         with sqlite3.connect(w.db) as src, sqlite3.connect(restored) as dst: src.backup(dst)
         w.service=Service(str(restored),w.client,w.extractor,w.clock)
+        w.service.mark_restored()
         w.service.recover_on_start()
         await w.submit()
         w.no_refund()
