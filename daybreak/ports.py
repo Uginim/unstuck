@@ -85,6 +85,16 @@ class Clock(Protocol):
 
 
 @dataclass(frozen=True)
+class OrderResult:
+    status: Literal["created", "approved", "paid", "pending", "failed_definite", "unknown"]
+    order_id: str | None = None
+    approve_url: str | None = None
+    capture_id: str | None = None
+    amount_cents: int | None = None
+    error_code: str | None = None
+
+
+@dataclass(frozen=True)
 class CaseView:
     """What web.py renders. The three evidence lines stay separate on purpose."""
     request_id: str

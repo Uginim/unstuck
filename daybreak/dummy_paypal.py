@@ -24,6 +24,12 @@ class DummyPayPal:
         # Next outcomes for refund calls: "lost" (applied, response lost), "timeout" (not applied),
         # "500", "pending", or an issue name returned as HTTP 422.
         self.faults: list[str] = []
+        self.orders: dict[str, dict] = {}
+        self.order_keys: dict[str, str] = {}
+        self.order_capture_calls = 0
+        self.money_in_calls = 0
+        # Next outcomes for order capture calls: "lost" (applied, response lost), "timeout", "500".
+        self.order_faults: list[str] = []
 
     def add_capture(self, capture_id: str, amount_cents: int, currency: str = "USD") -> None:
         self.captures[capture_id] = {
@@ -39,6 +45,13 @@ class DummyPayPal:
         path = request.url.path
         if path == "/v1/oauth2/token":
             return httpx.Response(200, json={"access_token": "dummy", "expires_in": 32400})
+        if path == "/v2/checkout/orders":
+            return self._create_order(request)
+        if path.startswith("/v2/checkout/orders/") and path.endswith("/capture"):
+            return self._capture_order(request, path.split("/")[4])
+        if path.startswith("/v2/checkout/orders/"):
+            order = self.orders.get(path.split("/")[4])
+            return httpx.Response(200, json=order) if order else self._error(404, "RESOURCE_NOT_FOUND")
         if path.startswith("/v2/payments/captures/") and path.endswith("/refund"):
             return self._refund(request, path.split("/")[4])
         if path.startswith("/v2/payments/captures/"):
@@ -48,6 +61,52 @@ class DummyPayPal:
             refund = self.refunds.get(path.split("/")[4])
             return httpx.Response(200, json=refund) if refund else self._error(404, "RESOURCE_NOT_FOUND")
         return self._error(404, "NOT_FOUND")
+
+    def approve_order(self, order_id: str) -> None:
+        """Stands in for the buyer approving on PayPal's page."""
+        self.orders[order_id]["status"] = "APPROVED"
+
+    def _create_order(self, request: httpx.Request) -> httpx.Response:
+        key = request.headers.get("PayPal-Request-Id", "")
+        if key in self.order_keys:
+            return httpx.Response(200, json=self.orders[self.order_keys[key]])
+        unit = json.loads(request.content)["purchase_units"][0]
+        order_id = f"DUMMY-O-{uuid.uuid4().hex[:10].upper()}"
+        self.orders[order_id] = {
+            "id": order_id, "status": "PAYER_ACTION_REQUIRED",
+            "purchase_units": [{"reference_id": unit.get("reference_id"), "amount": unit["amount"]}],
+            "links": [{"rel": "payer-action", "href": f"https://dummy.invalid/approve/{order_id}", "method": "GET"}],
+        }
+        self.order_keys[key] = order_id
+        return httpx.Response(201, json=self.orders[order_id])
+
+    def _capture_order(self, request: httpx.Request, order_id: str) -> httpx.Response:
+        self.order_capture_calls += 1
+        fault = self.order_faults.pop(0) if self.order_faults else None
+        if fault == "timeout":
+            raise httpx.ReadTimeout("dummy timeout", request=request)
+        if fault == "500":
+            return self._error(500, "INTERNAL_SERVER_ERROR")
+        order = self.orders.get(order_id)
+        if order is None:
+            return self._error(404, "RESOURCE_NOT_FOUND")
+        key = request.headers.get("PayPal-Request-Id", "")
+        if order["status"] == "COMPLETED":
+            if self.order_keys.get("capture:" + key) == order_id:
+                return httpx.Response(200, json=order)
+            return self._error(422, "ORDER_ALREADY_CAPTURED")
+        if order["status"] != "APPROVED":
+            return self._error(422, "ORDER_NOT_APPROVED")
+        self.money_in_calls += 1
+        unit = order["purchase_units"][0]
+        unit["payments"] = {"captures": [{
+            "id": f"DUMMY-C-{uuid.uuid4().hex[:10].upper()}", "status": "COMPLETED", "amount": unit["amount"],
+        }]}
+        order["status"] = "COMPLETED"
+        self.order_keys["capture:" + key] = order_id
+        if fault == "lost":
+            raise httpx.ReadTimeout("dummy lost response", request=request)
+        return httpx.Response(201, json=order)
 
     def _refund(self, request: httpx.Request, capture_id: str) -> httpx.Response:
         self.refund_calls += 1
