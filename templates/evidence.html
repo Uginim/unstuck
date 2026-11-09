@@ -1,0 +1,5 @@
+<h2>{{ case.amount_cents | usd }} · {{ (case.job_state or case.status) | replace('_', ' ') }}</h2>
+<p>Reason: {{ case.reason | replace('_', ' ') }}</p>
+{% if case.job_state == 'unknown' %}<p class="notice">Result unconfirmed. The reservation stays held. This is not a completed or failed refund.</p>{% endif %}
+{% if case.job_state == 'paypal_pending' %}<p class="notice">The payment provider reports pending. Funds are still reserved; completion has not been confirmed.</p>{% endif %}
+<dl class="evidence"><dt>Customer requested</dt><dd>{{ case.customer_requested }}</dd><dt>Seller allowed</dt><dd>{{ case.seller_allowed }}</dd><dt>{% if mode == 'dummy' %}Dummy PayPal reported{% else %}PayPal confirmed{% endif %}</dt><dd>{{ case.paypal_confirmed or 'No confirmed payment result.' }}</dd></dl>

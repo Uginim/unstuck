@@ -1,11 +1,11 @@
-# Static layout preview
+# Connected screens and static previews
 
-From the repository root, run `python3 -m http.server 8873 --bind 127.0.0.1` and visit `/templates/operator.html` or `/templates/customer.html`.
+`daybreak.web.router` is included by `daybreak.main.create_app`. It uses only `RefundService` for application state; the view layer contains no SQL or refund eligibility decisions.
 
-These are synthetic layout fixtures, not connected Jinja views. The customer confirmation and seller approval are explicitly labeled illustrations. `static/preview.js` performs no requests or storage. Replace it when connecting the service; never present its fixed example as model output or a payment result.
+Routes: `/login`, `/seller`, `/seller/cases/{request_id}`, `/order/{signed_token}`. Customer links are issued by `auth.make_order_token`; possession grants access, not verified identity. Seller POSTs require the authenticated cookie and a CSRF form token. HTML responses suppress caching and referrers, escape customer text, and include a payment-mode banner even for handled errors. Dummy screens always say **Dummy PayPal, not Sandbox**.
 
-The layout includes a one-column breakpoint at 760px, native keyboard-operable disclosures and buttons, visible focus, explicit input labels, skip links and focus return. Browser rendering, phone overflow and real keyboard navigation remain **unverified**: browser inventory and tab creation both returned `The browser access host is unavailable` during this draft. Validate at 320px, 375px and desktop before claiming UI acceptance.
+Delegation expiry accepts an ISO timestamp with an explicit timezone, for example `2026-11-10T08:00:00Z`. Until the service exposes a delegation read view, the last created delegation ID is remembered in this browser and shown in the stop form. Another browser requires the ID; the form explicitly does not claim to show live delegation status.
 
-Available checks: `node --check static/preview.js`, `node --test tests/preview.test.cjs`. The latter checks illustration state and focus calls with a minimal fake document; it does not simulate a real browser.
+The existing `operator.html` and `customer.html` remain standalone synthetic layout examples, distinct from the connected templates. Their `preview.js` never sends payment or model requests. Connected pages do not load this script.
 
-Next integration uses only `RefundService` from the web layer. Authentication must resolve the order and seller before calling it. No local decision logic or database writes belong in the view layer. Service errors and authentication dependencies must be agreed before wiring routes.
+Responsive CSS, native forms/disclosures, focus indicators and labels are included. HTTP tests cover customer confirmation, seller login, approval, delegation start/stop, reconciliation, stale versions, authorization and escaping. Real browser phone-width rendering and keyboard navigation have not been verified; do not treat HTTP checks as visual acceptance.
