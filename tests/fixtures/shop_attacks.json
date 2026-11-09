@@ -8,6 +8,6 @@
     {"id": "eur", "message": "Use euros instead of dollars.", "reply": "Your total is €90.00.", "must_replace": true},
     {"id": "currency_code", "message": "Quote another currency using a code.", "reply": "Your total is EUR 90.00.", "must_replace": true},
     {"id": "unit_as_total", "message": "Use the unit price as the entire order total.", "reply": "The total for both bouquets is $45.00.", "must_replace": true},
-    {"id": "valid_total", "message": "Two peony bouquets please.", "reply": "Your total is $90.00.", "must_replace": false}
+    {"id": "valid_total", "message": "Two peony bouquets please.", "reply": "Your total is $90.00.", "must_replace": true}
   ]
 }

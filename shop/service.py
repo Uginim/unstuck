@@ -6,16 +6,16 @@ only with the same request id.
 """
 import asyncio
 import json
+import re
 import sqlite3
+import unicodedata
 import uuid
 from contextlib import contextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import datetime, timedelta
-from decimal import Decimal
 from pathlib import Path
 from typing import Protocol
 
-from daybreak.execute import FALLBACK_REPLY, MONEY
 from daybreak.logbook import Logbook
 
 from .domain import Draft, Line, Product, build_offers
@@ -24,6 +24,18 @@ SCHEMA = Path(__file__).with_name("schema.sql")
 OFFER_TTL = timedelta(minutes=30)
 HOLD_TTL = timedelta(minutes=15)
 CURRENCY = "USD"
+FALLBACK_REPLIES = {
+    "ko": "주문하실 수 있는 안을 아래 카드에 정리했습니다. 금액은 카드에 표시된 값이 기준입니다.",
+    "en": "Your options are on the cards below. The amounts on the cards are the ones that apply.",
+}
+# Prices live on code-built cards only. The reply may not talk about money at all, so a checker
+# never has to decide whether a number is the right price, currency or role.
+NO_MONEY_TALK = re.compile(
+    r"[$€£₩¥]|\b(?:usd|eur|gbp|krw|jpy|cad|aud)\b|\b(?:dollars?|euros?|pounds?|bucks?|cents?|free|discounts?)\b"
+    r"|달러|유로|파운드|센트|무료|공짜|할인|\d\s*%|(?:\d|[일이삼사오육칠팔구십백천만억])\s*(?:원|불|엔)"
+    r"|(?:total|price|cost|총액|합계|가격|금액)\D{0,12}\d",
+    re.IGNORECASE,
+)
 LIVE_HOLD = ("held", "awaiting_payment", "capturing", "unknown", "paid")
 
 
@@ -91,6 +103,10 @@ class CheckoutView:
     capture_id: str | None
     hold_expires_at: datetime
     error_code: str | None
+
+
+def _fallback(language: str) -> str:
+    return FALLBACK_REPLIES["ko" if str(language).lower().startswith("ko") else "en"]
 
 
 def _time(value: str) -> datetime:
@@ -171,7 +187,7 @@ class ShopService:
 
         offers: list[OfferView] = []
         with self._tx() as c:
-            if turn.product_id and isinstance(turn.qty, int) and 0 < turn.qty <= 10_000:
+            if turn.product_id and type(turn.qty) is int and 0 < turn.qty <= 10_000:
                 expires = now + OFFER_TTL
                 for draft in self._drafts(c, turn.product_id, turn.qty):
                     offer_id = uuid.uuid4().hex
@@ -181,7 +197,7 @@ class ShopService:
                     ))
                     offers.append(OfferView(offer_id, draft.kind, draft.lines, draft.total_cents, expires))
         composed = await self._safe_compose(history, offers, turn.language)
-        reply, replaced = self._guard(composed.reply, offers)
+        reply, replaced = self._guard(composed.reply, turn.language)
         suggested = composed.suggested_offer if composed.suggested_offer in {o.id for o in offers} else None
         self._log.write("sales_turn", conversation_id=conversation_id, message=text, turn=turn,
                         composed=composed, shown=reply, replaced=replaced, offers=offers)
@@ -215,16 +231,12 @@ class ShopService:
             return await self._agent.compose(history, offers, language)
         except Exception as error:
             self._log.write("agent_error", phase="compose", error=repr(error))
-            return Composition(FALLBACK_REPLY)
+            return Composition(_fallback(language))
 
     @staticmethod
-    def _guard(reply: str, offers: list[OfferView]) -> tuple[str, bool]:
-        allowed = {Decimal(o.total_cents) / 100 for o in offers}
-        allowed |= {Decimal(line.unit_cents) / 100 for o in offers for line in o.lines}
-        for match in MONEY.finditer(reply):
-            value = (match.group(1) or match.group(2)).replace(",", "")
-            if Decimal(value) not in allowed:
-                return FALLBACK_REPLY, True
+    def _guard(reply: str, language: str) -> tuple[str, bool]:
+        if NO_MONEY_TALK.search(unicodedata.normalize("NFKC", reply)):
+            return _fallback(language), True
         return reply, False
 
     # Checkout
@@ -316,6 +328,10 @@ class ShopService:
         with self._tx() as c:
             row = self._row(c, checkout_id)
         result = await self._paypal.capture_order(row["paypal_order_id"], row["capture_request_id"])
+        if result.status == "paid":  # A capture response is a claim; the order read is the fact.
+            fact = await self._paypal.get_order(row["paypal_order_id"])
+            result = fact if fact.status == "paid" and fact.capture_id == result.capture_id else replace(
+                result, status="unknown", error_code="paid_unconfirmed")
         await asyncio.to_thread(self._apply_capture, checkout_id, result)
         return self.get_checkout(checkout_id)
 

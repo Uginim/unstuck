@@ -6,6 +6,7 @@ import pytest
 
 from daybreak.dummy_paypal import DummyPayPal
 from daybreak.paypal import PayPalClient
+from daybreak.ports import OrderResult
 from shop.seed import seed
 from shop.service import Composition, Interpretation, InvalidState, NotFound, OutOfStock, ShopService
 
@@ -195,12 +196,28 @@ async def test_model_cannot_invent_price_or_product(shop):
     assert (await service.message("give me diamonds")).offers == ()
 
 
-async def test_model_may_state_a_real_price(shop):
+async def test_reply_may_not_talk_about_money_even_when_correct(shop):
     service, *_ = shop
-    view_agent = Agent(qty=2, reply="That comes to $90.00 in total.")
-    service._agent = view_agent
-    view = await service.message("2 peony")
-    assert not view.reply_was_replaced
+    service._agent = Agent(qty=2, reply="That comes to $90.00 in total.")
+    assert (await service.message("2 peony")).reply_was_replaced
+    service._agent = Agent(qty=2, reply="원하시는 꽃다발 두 개를 준비할 수 있어요.")
+    assert not (await service.message("2 peony")).reply_was_replaced
+
+
+async def test_paid_unconfirmed_by_order_read_stays_unknown(shop):
+    service, dummy, _ = shop
+    held = await checkout(service, dummy)
+    dummy.approve_order(held.paypal_order_id)
+    real_get = service._paypal.get_order
+
+    async def stale(order_id):
+        return OrderResult("approved", order_id=order_id)
+
+    service._paypal.get_order = stale
+    assert (await service.capture(held.id)).state == "unknown"
+    service._paypal.get_order = real_get
+    view = await service.reconcile(held.id)
+    assert view.state == "paid" and dummy.money_in_calls == 1
 
 
 async def test_model_failure_leaves_the_shop_up(shop):
