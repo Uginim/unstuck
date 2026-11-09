@@ -1,17 +1,17 @@
 # Dummy results / 더미 결과
 
-Tested code revision: `256f9e47c5b2b41de9a94d98ac83bc63d6c6b62f`.
+Tested code revision: `db4805a685ee748bed2bde9157c8a8a774420ff1`.
 
 **Dummy PayPal, not Sandbox. No live PayPal or model calls.**
 
 Operational catalog: **24/24 scenarios passed**. Variants inside a scenario are assertions, not separately counted successes.
-Pytest report: 79 reported test cases, 0 failed, 0 skipped. Pure-policy subtests and supplemental HTTP/model-shape tests are not additional catalog scenarios.
+Pytest report: 96 reported test cases, 0 failed, 0 skipped. Pure-policy subtests and supplemental HTTP/model-shape tests are not additional catalog scenarios.
 
-Local uvicorn HTTP flows: 2/2 passed (normal app and injected response loss).
+Local uvicorn HTTP flows: FAILED; inspect the command output.
 
 ## Failures
 
-None.
+- Local HTTP smoke failed; see the subprocess output. The baseline app must inject an AgentPort for conversation routes.
 
 ## Limits
 
