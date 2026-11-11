@@ -229,3 +229,7 @@ cite::before{content:"Source: "}
 /* Per-visitor demo start page (T12). */
 .notice.bad{background:var(--bad-soft);color:var(--bad);border-color:transparent}
 .hero progress{width:100%;max-width:420px;height:10px;accent-color:var(--btn)}
+
+/* Collapsed stop-rule run (T16). */
+.gaterun summary{cursor:pointer;font-size:13px;color:var(--muted);margin-top:4px}
+.gaterun .gatebox{margin-top:8px}

@@ -72,6 +72,10 @@ In that case, ask that contact first. A guess written as a conclusion is a failu
 # Output
 Call final_answer once, in English. Keep `cause` to what the evidence supports, in one or two sentences.
 `summary_for_owner` explains to the freelancer what happened and what you suggest, in plain words.
+Never show internal document or reply ids (like "reply-7" or "sh-m2") in text the freelancer reads: `cause`,
+`summary_for_owner`, `open_question`, chat answers, questions, drafts and notes. Name the document by its title or sender
+instead ("AP's reply", "the approved extra episode cards email"). Ids belong only in `quote_doc`, `evidence_ids`
+and other id fields.
 
 # Scope-change mode
 When the task is a scope check, investigate new requests rather than unpaid money. Read all available

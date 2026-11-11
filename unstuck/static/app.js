@@ -115,11 +115,8 @@ function eventHtml(e, c, t0) {
     const hits = d.hits || [];
     body = `<div class="sub">${hits.length ? `Found: ${hits.map((h) => esc(docTitle(h, c.questions))).join(" · ")}` : "No matches"}</div>`;
   } else if (e.kind === "reply") body = `<blockquote>${esc(d.text)}</blockquote>`;
-  else if (e.kind === "gate") {
-    const tried = d.attempt && typeof d.attempt.cause === "string" && d.attempt.cause.trim();
-    body = `<div class="gatebox">${tried ? `<div><span class="k">Answer it tried</span>${esc(tried)}</div>` : ""}
-      <div class="why">${esc(d.reason)}</div></div>`;
-  } else if (e.kind === "thought") label = `<span class="k">Thinking</span>${esc(e.label)}`;
+  else if (e.kind === "gate") body = gateBody(d);
+  else if (e.kind === "thought") label = `<span class="k">Thinking</span>${esc(e.label)}`;
   else if (e.kind === "owner") label = `<span class="k">You</span><div class="bubble">${esc(e.label)}</div>`;
   else if (e.kind === "agent") label = `<span class="k">Unstuck</span><div class="bubble">${esc(e.label)}</div>`;
   else if (e.kind === "final") label = `Finished: ${esc(statusTitle(c.mode, d.status))}`;
@@ -128,6 +125,33 @@ function eventHtml(e, c, t0) {
   const fresh = seen && !seen.has(e.id) ? " enter" : "";
   return `<li class="ev ev-${esc(e.kind)}${TONE[e.kind] ? " tone-" + TONE[e.kind] : ""}${fresh}"><span class="node">${ICON[e.kind] || "•"}</span>
     <div class="ev-b"><div class="ev-h"><div class="lbl">${label}</div><span class="t">${elapsed(e.at, t0)}</span></div>${body}</div></li>`;
+}
+
+function gateBody(d) {
+  const tried = d.attempt && typeof d.attempt.cause === "string" && d.attempt.cause.trim();
+  return `<div class="gatebox">${tried ? `<div><span class="k">Answer it tried</span>${esc(tried)}</div>` : ""}
+    <div class="why">${esc(d.reason)}</div></div>`;
+}
+
+// Back-to-back stop-rule rejections read as one calm line; each reason stays one click away.
+function timelineHtml(c, t0) {
+  const out = [];
+  let run = [];
+  const flush = () => {
+    if (run.length > 1) {
+      const last = run[run.length - 1], fresh = seen && run.some((e) => !seen.has(e.id)) ? " enter" : "";
+      out.push(`<li class="ev ev-gate${fresh}"><span class="node">${ICON.gate}</span><div class="ev-b">
+        <div class="ev-h"><div class="lbl">Stop rule sent it back ${run.length} times</div><span class="t">${elapsed(last.at, t0)}</span></div>
+        <details class="gaterun"><summary>Show each reason</summary>${run.map((e) => gateBody(e.detail || {})).join("")}</details></div></li>`);
+    } else run.forEach((e) => out.push(eventHtml(e, c, t0)));
+    run = [];
+  };
+  for (const e of c.events) {
+    if (e.kind === "gate") run.push(e);
+    else { flush(); out.push(eventHtml(e, c, t0)); }
+  }
+  flush();
+  return out.join("");
 }
 
 function resultHtml(c) {
@@ -217,7 +241,7 @@ async function refresh() {
   if (key !== lastKey) {
     lastKey = key;
     const t0 = c.events.length ? c.events[0].at : 0;
-    $("#timeline").innerHTML = c.events.map((e) => eventHtml(e, c, t0)).join("") ||
+    $("#timeline").innerHTML = timelineHtml(c, t0) ||
       `<li class="empty muted">Not started. Press “Find out why”.</li>`;
     seen = new Set(c.events.map((e) => e.id));
     $("#result").innerHTML = resultHtml(c);

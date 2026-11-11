@@ -28,6 +28,9 @@ def action_links(a):
         a['type'] == 'draft_reply' and a['state'] in ('ready_to_send', 'done')) else None
 
 
+CHECK_LABELS = {'investigate': 'Why unpaid', 'unbilled': 'Unbilled work', 'scope': 'New requests'}
+
+
 def money_brief(store, rows, workspace=None):
     groups = {'Needs your approval': [], 'Waiting on client': [], "Don't bill yet / unclear": []}
     with store.db() as db:
@@ -39,7 +42,8 @@ def money_brief(store, rows, workspace=None):
         c = store.case(cid)
         def add(group, reason):
             reason = re.split(r'(?<=[.!?])\s+', ' '.join(reason.split()))[0]
-            groups[group].append({'id': cid, 'client': c['client'], 'reason': reason[:200] + ('…' if len(reason) > 200 else '')})
+            groups[group].append({'id': cid, 'client': c['client'], 'mode': c.get('mode') or 'investigate',
+                                  'reason': reason[:200] + ('…' if len(reason) > 200 else '')})
         for q in store.questions(cid):
             if q['state'] in ('needs_approval', 'ready_to_send'):
                 add('Needs your approval', ('Ready to send: ' if q['state'] == 'ready_to_send' else 'Review question: ') + q['question'])
@@ -51,6 +55,11 @@ def money_brief(store, rows, workspace=None):
         f = c['final'] or {}
         if f.get('status') in ('NEEDS_OWNER', 'EXHAUSTED'):
             add("Don't bill yet / unclear", f.get('summary_for_owner') or f.get('cause') or 'Review the stored result.')
+    # One client can have lines from its investigation and its checks; name the check only then.
+    for lines in groups.values():
+        for line in lines:
+            modes = {x['mode'] for x in lines if x['client'] == line['client']}
+            line['check'] = CHECK_LABELS.get(line['mode'], line['mode']) if len(modes) > 1 else ''
     totals, owed, seen = {}, [], set()
     unavailable = 0
     for r in rows:

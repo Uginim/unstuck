@@ -256,3 +256,11 @@ async def test_local_mode_keeps_one_shared_workspace(monkeypatch, tmp_path):
 def test_public_mode_requires_a_session_secret(monkeypatch, tmp_path):
     with pytest.raises(ValueError, match='SESSION_SECRET'):
         build(monkeypatch, tmp_path, UNSTUCK_MODE='public', UNSTUCK_SESSION_SECRET='short')
+
+
+async def test_inbox_link_hidden_until_the_visitor_has_a_workspace(public):
+    app, store, inv, call, visitor = public
+    async with visitor('192.0.2.1') as a:
+        assert 'href="/inbox"' not in (await call(a, 'GET', '/')).text
+        await started(call, a)
+        assert 'href="/inbox"' in (await call(a, 'GET', '/')).text

@@ -122,7 +122,7 @@ async def test_home_and_demo_wording(web):
     app, store, _ = web
     async with httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url='http://test') as c:
         text = (await c.get('/')).text
-        for s in ['Weekly money brief', 'Needs your approval', 'Waiting on client', 'Owed', 'USD 10.00', 'Read at']:
+        for s in ['Weekly money brief', 'Needs your approval', 'Waiting on client', 'Owed', 'USD 10.00', 'Read <time id="brief-read"']:
             assert s in text
         text = (await c.get('/inbox')).text
         assert 'Simulated client inbox (demo)' in text
@@ -160,3 +160,12 @@ async def test_invalid_stored_draft_cannot_be_approved(web):
         assert (await c.post(f'/actions/{aid}/approve')).status_code == 400
     assert store.action(aid)['state']=='proposed'
     inv.get.assert_not_awaited()
+
+
+def test_brief_names_the_check_only_when_a_client_has_several(tmp_path):
+    store = Store(str(tmp_path/'db'))
+    for cid, client, mode in [('a', 'Acme', 'investigate'), ('b', 'Acme', 'scope'), ('c', 'Cove', 'investigate')]:
+        store.add_case(cid, 'harbor', cid, client, 'work', mode=mode)
+        store.add_question(cid, 'q' + cid, 'ap@x.test', 'Question?', 'H', [])
+    lines = money_brief(store, [])['groups']['Needs your approval']
+    assert [(x['id'], x['check']) for x in lines] == [('a', 'Why unpaid'), ('b', 'New requests'), ('c', '')]
