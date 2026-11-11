@@ -1,0 +1,56 @@
+{% extends "base.html" %}
+{% block main %}
+{% set STATE = {"new": "Not started", "running": "Investigating", "needs_approval": "Needs your approval",
+                "waiting_reply": "Waiting for reply", "waiting_owner": "Waiting for you", "done": "Done", "error": "Error"} %}
+<section class="panel money-brief" aria-labelledby="brief-title">
+  <h1 id="brief-title">Weekly money brief</h1>
+  <p class="small muted">Current snapshot, not a weekly revenue report. Read at <time datetime="{{ brief.read_at }}">{{ brief.read_at }}</time>. No extra AI calls.</p>
+  <div class="brief-grid">
+  {% for heading, lines in brief.groups.items() %}
+    <section><h2>{{ heading }}</h2><ul>
+    {% for line in lines %}<li><a href="/case/{{ line.id }}">{{ line.client }}</a> — {{ line.reason }}</li>
+    {% else %}<li class="muted">Nothing here.</li>{% endfor %}
+    </ul></section>
+  {% endfor %}
+    <section><h2>Owed</h2>
+      {% for currency, cents in brief.totals.items() %}<p><strong>{{ currency }} {{ '{:,.2f}'.format(cents/100) }}</strong></p>{% else %}<p>No known outstanding balance.</p>{% endfor %}
+      <ul>{% for line in brief.owed %}<li><a href="/case/{{ line.id }}">{{ line.client }}</a> — {{ line.currency }} {{ '{:,.2f}'.format(line.cents/100) }}: {{ line.reason }}</li>{% endfor %}</ul>
+      {% if brief.unavailable %}<p class="small">{{ brief.unavailable }} invoice balance(s) unavailable; totals are incomplete.</p>{% endif %}
+      <p class="small muted">Tracked invoices only. Balances may not yet be overdue.</p>
+    </section>
+  </div>
+</section>
+<section class="hero">
+  <h1>Unpaid invoices</h1>
+  <p>Unstuck finds out <em>why</em> a client hasn't paid, by reading your mail, checking PayPal and asking the
+  right person, then proposes a fix you approve.</p>
+  <form method="post" action="/sweep" class="btns"><button class="primary big" {% if sweep_running %}disabled{% endif %}>Check all invoices</button></form>
+  <p class="small" role="status">{{ sweep_status }} Only investigates and queues proposals. You approve every action.</p>
+  {% if workspace_expires %}<p class="small muted">Your private demo: only you see these sandbox invoices. Kept until {{ workspace_expires }}.</p>{% endif %}
+</section>
+<div class="cards">
+{% for r in rows %}
+  <article class="card inv">
+    <a class="client" href="/case/{{ r.id }}">{{ r.client }}</a>
+    <div class="muted">{{ r.title }}</div>
+    {% if r.live %}
+    <div class="money">{{ r.live.currency }} {{ '{:,.2f}'.format((r.live.due_cents or 0)/100) }} <small>due of {{ r.live.currency }} {{ '{:,.2f}'.format(r.live.total_cents/100) }}</small></div>
+    <div class="meta">PayPal {{ r.live.number }} · {{ r.live.status.replace('_',' ').lower() }} · due {{ r.live.due_date }}</div>
+    {% else %}<div class="meta">PayPal invoice unavailable</div>{% endif %}
+    {% if r.final %}<p class="triage">{{ r.final.cause }}</p>{% endif %}
+    {% if r.attention %}<p class="small"><strong>{{ r.attention }} question/action approval(s) need you.</strong></p>{% endif %}
+    {% if r.unbilled %}
+    <p class="small">Unbilled work: <a href="/case/{{ r.unbilled.id }}">{{ STATE.get(r.unbilled.state, r.unbilled.state) }}</a>
+    {% if r.unbilled_attention %} · {{ r.unbilled_attention }} approval(s) need you{% endif %}</p>
+    {% if r.unbilled.final %}<p class="small muted">{{ r.unbilled.final.cause }}</p>{% endif %}
+    {% endif %}
+    <form method="post" action="/case/{{ r.id }}/scope" class="btns"><button>Check new requests</button></form>
+    {% if r.scope %}<p class="small">New requests: <a href="/case/{{ r.scope.id }}">{{ STATE.get(r.scope.state, r.scope.state) }}</a></p>{% endif %}
+    <form method="post" action="/case/{{ r.id }}/unbilled" class="btns"><button>Check for unbilled work</button></form>
+    <div class="open"><span class="pill st-{{ r.state }}">{{ STATE.get(r.state, r.state.replace('_', ' ')) }}</span><a href="/case/{{ r.id }}">Open case <span aria-hidden="true">→</span></a></div>
+  </article>
+{% endfor %}
+</div>
+<p class="small muted reset">Shared Sandbox demo. Reset is disabled to preserve other visitors’ work.</p>
+{% if refreshing %}<script>setTimeout(() => location.reload(), 8000);</script>{% endif %}
+{% endblock %}

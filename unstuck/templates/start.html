@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ 'Sample' if state == 'sample' else 'Start your demo' }} · Unstuck{% endblock %}
+{% block main %}
+{% if state == 'seeding' %}<script>setTimeout(() => location.reload(), 2000);</script>{% endif %}
+<section class="hero">
+  {% if state == 'seeding' %}
+  <h1>Setting up your demo</h1>
+  {% if queued %}<p role="status">Waiting for another visitor's demo to finish. PayPal sandbox invoices are created one demo at a time.</p>
+  {% else %}<p role="status">Creating your PayPal sandbox invoices: {{ row.seeded }} of {{ total }}. This page refreshes on its own.</p>{% endif %}
+  <progress max="{{ total }}" value="{{ row.seeded }}">{{ row.seeded }} of {{ total }}</progress>
+  {% elif state == 'sample' %}
+  <h1>Sample: what the demo shows</h1>
+  <p>A read-only summary of the five demo clients. Nothing on this page calls PayPal or the AI.</p>
+  {% else %}
+  <h1>Unpaid invoices, explained</h1>
+  <p>Unstuck finds out <em>why</em> a client hasn't paid, by reading your mail, checking PayPal and asking the
+  right person, then proposes a fix you approve.</p>
+  {% if state == 'expired' %}<p class="notice" role="status">Your demo expired. Demos are kept for {{ hours|round|int }} hours and are not reused. You can start a new one.</p>
+  {% elif state == 'failed' %}<p class="notice bad" role="status">{{ (row and row.error) or 'Setting up your demo stopped before it finished.' }} You can try again.</p>
+  {% elif state == 'limit' %}<p class="notice bad" role="status">{{ reason }} Please try again tomorrow. Meanwhile you can read the <a href="/sample">sample</a>.</p>{% endif %}
+  {% if state != 'limit' %}
+  <p>You get a private demo: five fresh PayPal <b>sandbox</b> invoices that only you can see and act on, kept for
+  {{ hours|round|int }} hours. No real money or email.</p>
+  <form method="post" action="/workspace" class="btns"><button class="primary big">Start my demo</button></form>
+  {% endif %}
+  <p class="small"><a href="/sample">Read-only sample</a></p>
+  {% endif %}
+</section>
+{% if state == 'sample' %}
+<div class="cards">
+{% for s in scenarios %}
+  <article class="card inv">
+    <div class="client">{{ s.client }}</div>
+    <div class="muted">{{ s.title }}</div>
+    <p class="small"><span class="k">What the client says</span>{{ s.docs[0].text.split('\n\n', 1)[-1] }}</p>
+    <p class="small"><span class="k">Actual cause in this scenario</span>{{ s.truth }}</p>
+  </article>
+{% endfor %}
+</div>
+<p class="small"><a href="/">Back</a></p>
+{% endif %}
+{% endblock %}

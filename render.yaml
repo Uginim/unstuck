@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: unstuck-demo
+    runtime: docker
+    plan: starter
+    branch: claude/unstuck
+    numInstances: 1
+    dockerfilePath: ./Dockerfile
+    dockerContext: .
+    healthCheckPath: /health
+    autoDeployTrigger: "off"
+    envVars:
+      - key: PAYPAL_CLIENT_ID
+        sync: false
+      - key: PAYPAL_CLIENT_SECRET
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
+      - key: UNSTUCK_DAILY_USD
+        value: "3"
+      - key: UNSTUCK_DB
+        value: /app/data/unstuck.db
+      - key: UNSTUCK_LOG
+        value: /app/data/unstuck.jsonl
+      - key: UNSTUCK_MODE
+        value: public
+      - key: UNSTUCK_SESSION_SECRET
+        generateValue: true
+      - key: UNSTUCK_WORKSPACES_PER_IP
+        value: "3"
+      - key: UNSTUCK_WORKSPACES_PER_DAY
+        value: "60"
+      - key: UNSTUCK_WORKSPACE_HOURS
+        value: "48"

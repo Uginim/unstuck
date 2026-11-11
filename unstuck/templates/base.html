@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="color-scheme" content="light dark">
+<title>{% block title %}Unstuck{% endblock %}</title>
+<link rel="preconnect" href="https://fonts.googleapis.com"><link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap">
+<link rel="stylesheet" href="/static/app.css?v=t8">
+</head>
+<body>
+{% set path = request.url.path %}
+<header class="top">
+  <a class="brand" href="/"><span class="mark">U</span>Unstuck</a>
+  <nav>
+    <a href="/" {% if path == '/' or path.startswith('/case/') %}class="on"{% endif %}>Invoices</a>
+    <a href="/inbox" {% if path == '/inbox' %}class="on"{% endif %}>Simulated client inbox <small>demo</small></a>
+  </nav>
+  <span class="who"><span class="me">{{ me.name }}</span><span class="pill sandbox">PayPal sandbox</span></span>
+</header>
+<main>{% block main %}{% endblock %}</main>
+</body>
+</html>

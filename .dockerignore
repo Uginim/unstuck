@@ -1,0 +1,20 @@
+# Allow only runtime source and locked dependency metadata into the build context.
+**
+!Dockerfile
+!.dockerignore
+!pyproject.toml
+!uv.lock
+!daybreak/
+!daybreak/**
+!unstuck/
+!unstuck/**
+**/__pycache__/**
+**/*.pyc
+**/.env
+**/.env.*
+**/*.key
+**/*.pem
+**/*credentials*
+**/*.db
+**/*.sqlite*
+**/*.jsonl

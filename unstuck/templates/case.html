@@ -1,0 +1,42 @@
+{% extends "base.html" %}
+{% block title %}{{ case.client }} · Unstuck{% endblock %}
+{% block main %}
+<div class="casehead">
+  <div>
+    <a href="/" class="back">← All invoices</a>
+    <h1>{{ case.client }}</h1>
+    <div class="muted">{{ case.title }}</div>
+  </div>
+  <div class="btns"><button id="go" class="primary big">{{ 'Check new requests' if case.mode == 'scope' else 'Check for unbilled work' if case.mode == 'unbilled' else 'Find out why' }}</button>
+  {% if case.mode != 'scope' %}<form method="post" action="/case/{{ case.id }}/scope"><button class="big">Check new requests</button></form>{% endif %}
+  {% if case.mode == 'scope' %}<a href="/case/{{ case.parent_id }}">Original invoice investigation</a>{% endif %}
+  {% if case.mode != 'unbilled' %}<form method="post" action="/case/{{ case.id }}/unbilled"><button class="big">Check for unbilled work</button></form>
+  {% else %}<a href="/case/{{ case.parent_id }}">Original invoice investigation</a>{% endif %}</div>
+</div>
+<div class="case">
+  <section class="panel inv-panel"><h3>PayPal invoice <span class="pill live">live</span></h3><div id="invoice" class="muted">Loading…</div></section>
+  <section class="panel story">
+    <div class="story-h"><h2>{{ 'New requests check' if case.mode == 'scope' else 'Unbilled work check' if case.mode == 'unbilled' else 'Investigation' }}</h2><span id="state" class="pill"></span></div>
+    <ol id="timeline" class="timeline"></ol>
+    <form id="chat" class="chat" autocomplete="off">
+      <label class="k" for="chat-text">Tell Unstuck</label>
+      <textarea id="chat-text" name="message" rows="2" maxlength="2000" placeholder="Tell Unstuck… e.g. “Why do you think that?” or “Draft a softer note instead.”"></textarea>
+      <div class="chat-row"><span id="chat-hint" class="small muted"></span><button id="chat-send" class="primary">Send</button></div>
+    </form>
+  </section>
+  <aside class="outcome"><div id="result"></div><div id="actions"></div></aside>
+  <section class="panel ws"><h3>Workspace</h3>
+    <details><summary>Add a document</summary>
+      <form method="post" action="/case/{{ case.id }}/documents">
+        <label for="document-title">Title</label><input id="document-title" name="title" maxlength="200" required>
+        <label for="document-text">Pasted text</label><textarea id="document-text" name="text" rows="6" maxlength="20000" required></textarea>
+        <p class="small muted">Plain text, up to 20,000 characters. Added as your evidence for this case; not independently verified.</p>
+        <button type="submit">Add document</button>
+      </form>
+    </details>
+    <ul class="docs">{% for d in s.docs %}<li data-doc="{{ d.id }}" data-title="{{ d.title }}" data-kind="{{ d.kind }}" data-provenance="{{ d.provenance|default('') }}"><details><summary><span class="tag">{{ d.provenance|default(d.kind) }}</span><span class="dt">{{ d.title }}</span><span class="seen-mark" title="Read by Unstuck">read</span></summary><pre>{{ d.text }}</pre></details></li>{% endfor %}</ul>
+  </section>
+</div>
+<script>window.CASE_ID = "{{ case.id }}";</script>
+<script src="/static/app.js?v=t8"></script>
+{% endblock %}

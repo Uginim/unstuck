@@ -32,3 +32,4 @@ build/
 
 # Local evaluation artifacts and temporary synthetic databases
 .checks/
+.playwright-mcp/

@@ -1,0 +1,19 @@
+{% extends "base.html" %}
+{% block title %}Simulated client inbox (demo) · Unstuck{% endblock %}
+{% block main %}
+<section class="hero">
+  <h1>Simulated client inbox (demo)</h1>
+  <p>This page stands in for the client's email. Questions you marked as sent are listed here; this page does not send email. The reply box is pre-filled with the scenario's answer and can be edited.</p>
+</section>
+{% if request.query_params.get('submitted') %}<p class="notice">Demo reply submitted. Unstuck continues the investigation with it. <a href="/">Back to invoices</a></p>{% endif %}
+{% if not items %}<p class="muted empty">No open questions.</p>{% endif %}
+{% for q in items %}
+<form class="panel mail" method="post" action="/questions/{{ q.id }}/reply">
+  <div class="mail-h"><span class="k">To</span> <b>{{ q.to_addr }}</b> <span class="muted">· {{ q.who }} · {{ q.client }}</span></div>
+  <p class="q">{{ q.question }}</p>
+  <label class="k" for="reply-{{ q.id }}">Reply</label>
+  <textarea id="reply-{{ q.id }}" name="reply" rows="5">{{ q.draft }}</textarea>
+  <button class="primary big">Submit simulated reply</button>
+</form>
+{% endfor %}
+{% endblock %}
