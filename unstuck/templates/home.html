@@ -25,7 +25,7 @@
   <p>Unstuck finds out <em>why</em> a client hasn't paid, by reading your mail, checking PayPal and asking the
   right person, then proposes a fix you approve.</p>
   <form method="post" action="/sweep" class="btns"><button class="primary big" {% if sweep_running %}disabled{% endif %}>Check all invoices</button></form>
-  <p class="small" role="status">{{ sweep_status }} Only investigates and queues proposals. You approve every action.</p>
+  <p class="small" role="status">{{ sweep_status }}{% if not sweep_status.endswith(('.', '…')) %}.{% endif %} Only investigates and queues proposals. You approve every action.</p>
   {% if workspace_expires %}<p class="small muted">Your private demo: only you see these sandbox invoices. Kept until {{ workspace_expires }}.</p>{% endif %}
 </section>
 <div class="cards">
@@ -51,6 +51,6 @@
   </article>
 {% endfor %}
 </div>
-<p class="small muted reset">Shared Sandbox demo. Reset is disabled to preserve other visitors’ work.</p>
+{% if not workspace_expires %}<p class="small muted reset">Shared Sandbox demo. Reset is disabled to preserve other visitors’ work.</p>{% endif %}
 {% if refreshing %}<script>setTimeout(() => location.reload(), 8000);</script>{% endif %}
 {% endblock %}

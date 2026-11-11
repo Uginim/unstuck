@@ -69,7 +69,7 @@ button:focus-visible{outline:3px solid var(--brand-soft);outline-offset:2px}
 .client{font-weight:700;font-size:18px;letter-spacing:-.01em}
 .card.inv .money{margin-top:14px}
 .money{font-size:30px;font-weight:700;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
-.money small{font-size:14px;color:var(--muted);font-weight:400;letter-spacing:0}
+.money small{font-size:14px;color:var(--muted);font-weight:400;letter-spacing:0;white-space:nowrap}
 .meta{color:var(--muted);font-size:13px}
 .card .open{margin-top:auto;padding-top:14px;display:flex;justify-content:space-between;align-items:center;gap:10px;color:var(--brand);font-weight:600;font-size:14px}
 .card .open .pill{margin-right:auto}
@@ -154,7 +154,11 @@ cite::before{content:"Source: "}
 .cause{font-size:19px;line-height:1.4;font-weight:600;margin:2px 0 12px;letter-spacing:-.01em}
 .result blockquote{border-left-color:var(--ok)}.result.tone-warn blockquote{border-left-color:var(--warn)}
 .open-q,.summary{margin:12px 0 0;font-size:14px}.summary{color:var(--ink2)}
-.cost{margin-top:-6px;padding-left:4px}
+.cost{margin-top:6px;padding-left:4px}
+/* Scope results render sections directly (no .result-b), so the panel needs its own padding. */
+.result.scope-result{padding:16px 18px 18px;border-color:var(--line2)}
+.scope-result h2{margin-bottom:4px}.scope-result section{margin-top:16px}.scope-result h3{margin:0 0 4px}
+.scope-result section p{margin:4px 0}
 .actions-h{margin:6px 0 -2px}.actions-h h3{margin:0}
 .action{display:flex;flex-direction:column;gap:6px}
 .action.st-proposed{border-color:var(--brand);box-shadow:0 0 0 4px var(--brand-soft)}

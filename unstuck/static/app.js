@@ -7,6 +7,13 @@ const STATE = {new: "Not started", running: "Investigating", needs_approval: "Ne
   waiting_reply: "Waiting for reply", waiting_owner: "Waiting for you", done: "Done", error: "Error"};
 const STATUS = {CONFIRMED: ["Cause confirmed", "ok"], NEEDS_OWNER: ["Cause confirmed · your decision needed", "ok"],
   EXHAUSTED: ["Cause not confirmed", "warn"], NOT_A_BLOCKER: ["Not stuck", "ok"]};
+// Unbilled and scope checks reuse the investigation statuses, but "Not stuck" / "Cause confirmed" misread there.
+function statusTitle(mode, status) {
+  if (mode === "scope") return "New requests classified";
+  if (mode === "unbilled" && status === "NOT_A_BLOCKER") return "Nothing unbilled found";
+  if (mode === "unbilled" && status === "NEEDS_OWNER") return "Your decision needed";
+  return (STATUS[status] || [words(status)])[0];
+}
 const ACTION = {send_reminder: "Send a PayPal reminder", allow_partial_payment: "Allow partial payment",
   create_invoice: "Create and send an agreed-work invoice", draft_reply: "Draft a reply email"};
 const ACTION_STATE = {proposed: "Needs your approval", running: "Running", done: "Done", refused: "Refused",
@@ -16,7 +23,7 @@ const WAITING = {
   running: "Investigating. The answer shows up here.",
   needs_approval: "Waiting for you to approve or skip a question.",
   waiting_reply: "Waiting for a reply to the question.",
-  error: "The investigation stopped. Press “Run again” to retry.",
+  error: "This run stopped. Use the button at the top to retry.",
   waiting_owner: "Unstuck answered in chat. Write again, or press “Run again” to restart.",
 };
 
@@ -41,7 +48,7 @@ const TONE = {paypal: "check", search: "check", read: "check", ask: "people", se
 // Why chat is closed in each case state; mirrors unstuck/chat.py refusals.
 const CHAT_HINT = {
   new: "Press “Find out why” first.", running: "Unstuck is working…",
-  waiting_reply: "Chat opens again when the reply arrives.", error: "Press “Run again” to restart.",
+  waiting_reply: "Chat opens again when the reply arrives.", error: "Use the button at the top to retry.",
 };
 
 let timer = null, lastKey = "", seen = null, hadFinal = null;
@@ -115,7 +122,7 @@ function eventHtml(e, c, t0) {
   } else if (e.kind === "thought") label = `<span class="k">Thinking</span>${esc(e.label)}`;
   else if (e.kind === "owner") label = `<span class="k">You</span><div class="bubble">${esc(e.label)}</div>`;
   else if (e.kind === "agent") label = `<span class="k">Unstuck</span><div class="bubble">${esc(e.label)}</div>`;
-  else if (e.kind === "final") label = `Finished: ${esc((STATUS[d.status] || [words(d.status)])[0])}`;
+  else if (e.kind === "final") label = `Finished: ${esc(statusTitle(c.mode, d.status))}`;
   else if (e.kind === "action") label = esc(words(e.label));
   else if (e.kind === "error") body = d.error ? `<div class="sub bad">${esc(d.error)}</div>` : "";
   const fresh = seen && !seen.has(e.id) ? " enter" : "";
@@ -128,7 +135,7 @@ function resultHtml(c) {
   if (!f) return `<div class="panel waiting"><div class="k">Answer</div><p>${esc(WAITING[c.state] || "")}</p></div>`;
   if (c.mode === "scope") {
     const labels = {included: "Included revision", paid_change: "Paid change · agreement needed", unclear: "Unclear · confirmation needed"};
-    return `<div class="panel result"><h2>New requests</h2>${(f.scope_findings || []).map(x =>
+    return `<div class="panel result scope-result"><h2>New requests</h2>${(f.scope_findings || []).map(x =>
       `<section><h3>${esc(x.name)}</h3><p><strong>${esc(labels[x.classification])}</strong></p><p>${esc(x.reason)}</p>
       ${["request", "contract", "price", "timing"].filter(k => x[k + "_quote"]).map(k =>
         `<blockquote>${esc(x[k + "_quote"])}<cite>${esc(docTitle(x[k + "_doc"], c.questions))}</cite></blockquote>`).join("")}
@@ -137,7 +144,8 @@ function resultHtml(c) {
       <p class="small muted">No invoice or payment change. Agree scope first; check unbilled work after delivery.</p></div>
       <div class="small muted cost">Model cost for this case: $${c.usd.toFixed(4)}</div>`;
   }
-  const [title, tone] = STATUS[f.status] || [words(f.status), "warn"];
+  const [, tone] = STATUS[f.status] || [words(f.status), "warn"];
+  const title = statusTitle(c.mode, f.status);
   const lead = c.mode === "unbilled" ? "Agreed work and billing" : f.status === "EXHAUSTED" ? "What is known so far" : f.status === "NOT_A_BLOCKER" ? "What the evidence shows" : "Why it's not paid";
   return `<div class="panel result tone-${tone} st-${esc(f.status)}">
     <div class="result-h"><span class="badge">${tone === "ok" ? ICON.final : ICON.error}</span><span>${esc(title)}</span></div>
@@ -220,8 +228,9 @@ async function refresh() {
     hadFinal = !!c.final;
   }
   $("#go").disabled = ["running", "needs_approval", "waiting_reply"].includes(c.state) || (["unbilled", "scope"].includes(c.mode) && !["new", "error"].includes(c.state));
-  $("#go").textContent = c.mode === "unbilled" ? (c.state === "new" ? "Check for unbilled work" : c.state === "running" ? "Checking…" : c.state === "error" ? "Retry check" : "Review this check") : c.state === "new" ? "Find out why" : c.state === "running" ? "Investigating…" : "Run again";
-  if (c.mode === "scope") $("#go").textContent = c.state === "new" ? "Check new requests" : c.state === "running" ? "Checking…" : c.state === "error" ? "Retry check" : "Review this check";
+  const checkLabel = c.state === "done" ? "Check complete" : "Review below";
+  $("#go").textContent = c.mode === "unbilled" ? (c.state === "new" ? "Check for unbilled work" : c.state === "running" ? "Checking…" : c.state === "error" ? "Retry check" : checkLabel) : c.state === "new" ? "Find out why" : c.state === "running" ? "Investigating…" : "Run again";
+  if (c.mode === "scope") $("#go").textContent = c.state === "new" ? "Check new requests" : c.state === "running" ? "Checking…" : c.state === "error" ? "Retry check" : checkLabel;
   clearTimeout(timer);
   timer = setTimeout(refresh, ["running", "waiting_reply"].includes(c.state) ? 1200 : 4000);
   chatState(c);
