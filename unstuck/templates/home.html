@@ -3,22 +3,31 @@
 {% set STATE = {"new": "Not started", "running": "Investigating", "needs_approval": "Needs your approval",
                 "waiting_reply": "Waiting for reply", "waiting_owner": "Waiting for you", "done": "Done", "error": "Error"} %}
 <section class="panel home-chat" aria-labelledby="home-chat-title">
-  <h2 id="home-chat-title">Ask Unstuck</h2>
-  <p class="small muted">Start a check or ask about your brief. Approvals stay on case buttons.</p>
-  <div class="home-chat-history">
+  <header class="hc-head">
+    <span class="mark" aria-hidden="true">U</span>
+    <div><h2 id="home-chat-title">Ask Unstuck</h2>
+    <p class="small muted">Tell it what to check. It starts the work; approvals and sending stay on buttons.</p></div>
+  </header>
+  <ol class="home-chat-history" aria-live="polite">
   {% for exchange in chat_history %}
-    <p><strong>You</strong> {{ exchange.user }}</p>
-    <p><strong>Unstuck</strong> {{ exchange.reply }} {% for link in exchange.links %}<a href="{{ link.href }}">{{ link.label }}</a> {% endfor %}</p>
+    <li class="msg me"><span class="who-label">You</span><div class="bubble">{{ exchange.user }}</div></li>
+    <li class="msg bot"><span class="avatar" aria-hidden="true">U</span><div><span class="who-label">Unstuck</span><div class="bubble">{{ exchange.reply }}</div>
+      {% if exchange.links %}<div class="msg-links">{% for link in exchange.links %}<a class="link-chip" href="{{ link.href }}">{{ link.label }} <span aria-hidden="true">→</span></a>{% endfor %}</div>{% endif %}</div></li>
+  {% else %}
+    <li class="hc-empty muted small">Try one of these, or type your own.</li>
   {% endfor %}
+  </ol>
+  <div class="hc-suggest" aria-label="Example questions">
+    {% for q in ["Why hasn't Quill paid?", "Did I forget to bill anyone?", "What needs me this week?", "Is Cedar's new request extra work?"] %}<button type="button" class="chip" data-q="{{ q }}">{{ q }}</button>{% endfor %}
   </div>
-  <form id="home-chat-form" class="btns">
-    <label for="home-chat-input" class="small">Your question</label>
-    <input id="home-chat-input" name="text" required maxlength="2000" autocomplete="off" placeholder="Why hasn't Quill paid? · Did I forget to bill anyone?">
+  <form id="home-chat-form" class="hc-composer">
+    <label for="home-chat-input" class="sr-only">Your question</label>
+    <input id="home-chat-input" name="text" required maxlength="2000" autocomplete="off" placeholder="Ask about a client, unbilled work, or this week…">
     <button class="primary" type="submit">Ask</button>
   </form>
   <p id="home-chat-status" role="status" class="small"></p>
 </section>
-<script src="/static/home-chat.js?v=t17" defer></script>
+<script src="/static/home-chat.js?v=t18" defer></script>
 <section class="panel money-brief" aria-labelledby="brief-title">
   <h1 id="brief-title">Weekly money brief</h1>
   <p class="small muted">Current snapshot, not a weekly revenue report. Read <time id="brief-read" datetime="{{ brief.read_at }}" title="{{ brief.read_at }}">{{ brief.read_at[:10] }} {{ brief.read_at[11:16] }} UTC</time>. No extra AI calls.</p>
