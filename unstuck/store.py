@@ -28,6 +28,8 @@ CREATE TABLE IF NOT EXISTS actions (
 CREATE TABLE IF NOT EXISTS documents (
   id TEXT PRIMARY KEY, case_id TEXT NOT NULL, workspace TEXT NOT NULL DEFAULT '',
   title TEXT NOT NULL, text TEXT NOT NULL, created REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS home_chat (
+  id INTEGER PRIMARY KEY AUTOINCREMENT, workspace TEXT NOT NULL, user TEXT NOT NULL, reply TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS spend (day TEXT PRIMARY KEY, usd REAL);
 """
 
@@ -118,7 +120,7 @@ class Store:
 
     def clear(self):
         with self.db() as c:
-            for t in ("cases", "events", "questions", "actions", "documents"):
+            for t in ("cases", "events", "questions", "actions", "documents", "home_chat"):
                 c.execute(f"DELETE FROM {t}")
 
     def add_document(self, case_id, title, text):
@@ -201,6 +203,16 @@ class Store:
     def set_action(self, aid, state, result=None):
         with self.db() as c:
             c.execute("UPDATE actions SET state=?, result=? WHERE id=?", (state, json.dumps(result, ensure_ascii=False, default=str), aid))
+
+    def home_exchanges(self, workspace):
+        with self.db() as c:
+            rows = c.execute("SELECT user, reply FROM home_chat WHERE workspace=? ORDER BY id DESC LIMIT 6", (workspace,)).fetchall()
+        return [{"user": r["user"], **json.loads(r["reply"])} for r in reversed(rows)]
+
+    def add_home_exchange(self, workspace, user, reply):
+        with self.db() as c:
+            c.execute("INSERT INTO home_chat(workspace,user,reply) VALUES (?,?,?)",
+                      (workspace, user, json.dumps(reply, ensure_ascii=False)))
 
     # spend
     def add_spend(self, case_id, usd):

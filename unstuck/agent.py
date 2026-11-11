@@ -112,10 +112,10 @@ class Investigator:
         return [{"id": i, "title": t, "excerpt": e} for _, i, t, e in hits[:3]]
 
     # ---------- model ----------
-    async def call(self, case_id, messages):
+    async def call(self, case_id, messages, *, system=SYSTEM, tools=TOOLS):
         if self.store.spent_today() >= DAILY_USD:
             raise BudgetExceeded("daily model budget reached")
-        body = dict(model=MODEL, max_tokens=2000, system=SYSTEM, tools=TOOLS, messages=messages, output_config={"effort": "low"})
+        body = dict(model=MODEL, max_tokens=2000, system=system, tools=tools, messages=messages, output_config={"effort": "low"})
         # Bound this text-only call before sending; the app serializes calls across runs.
         input_bound = len(json.dumps(body, ensure_ascii=True).encode()) + 4096
         pin, pout = PRICES.get(MODEL, PRICES["claude-sonnet-5-5"])

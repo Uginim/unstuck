@@ -2,6 +2,23 @@
 {% block main %}
 {% set STATE = {"new": "Not started", "running": "Investigating", "needs_approval": "Needs your approval",
                 "waiting_reply": "Waiting for reply", "waiting_owner": "Waiting for you", "done": "Done", "error": "Error"} %}
+<section class="panel home-chat" aria-labelledby="home-chat-title">
+  <h2 id="home-chat-title">Ask Unstuck</h2>
+  <p class="small muted">Start a check or ask about your brief. Approvals stay on case buttons.</p>
+  <div class="home-chat-history">
+  {% for exchange in chat_history %}
+    <p><strong>You</strong> {{ exchange.user }}</p>
+    <p><strong>Unstuck</strong> {{ exchange.reply }} {% for link in exchange.links %}<a href="{{ link.href }}">{{ link.label }}</a> {% endfor %}</p>
+  {% endfor %}
+  </div>
+  <form id="home-chat-form" class="btns">
+    <label for="home-chat-input" class="small">Your question</label>
+    <input id="home-chat-input" name="text" required maxlength="2000" autocomplete="off" placeholder="Why hasn't Quill paid? · Did I forget to bill anyone?">
+    <button class="primary" type="submit">Ask</button>
+  </form>
+  <p id="home-chat-status" role="status" class="small"></p>
+</section>
+<script src="/static/home-chat.js?v=t17" defer></script>
 <section class="panel money-brief" aria-labelledby="brief-title">
   <h1 id="brief-title">Weekly money brief</h1>
   <p class="small muted">Current snapshot, not a weekly revenue report. Read <time id="brief-read" datetime="{{ brief.read_at }}" title="{{ brief.read_at }}">{{ brief.read_at[:10] }} {{ brief.read_at[11:16] }} UTC</time>. No extra AI calls.</p>
@@ -53,5 +70,5 @@
 {% endfor %}
 </div>
 {% if not workspace_expires %}<p class="small muted reset">Shared Sandbox demo. Reset is disabled to preserve other visitors’ work.</p>{% endif %}
-{% if refreshing %}<script>setTimeout(() => location.reload(), 8000);</script>{% endif %}
+{% if refreshing %}<script>setInterval(() => { if (!document.getElementById("home-chat-input").value && !document.querySelector("#home-chat-form button").disabled) location.reload(); }, 8000);</script>{% endif %}
 {% endblock %}

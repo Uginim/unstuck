@@ -142,6 +142,7 @@ def delete_cases(store, workspace):
         for t in ("events", "questions", "actions", "documents"):
             c.executemany(f"DELETE FROM {t} WHERE case_id=?", [(i,) for i in ids])
         c.execute("DELETE FROM cases WHERE workspace=?", (workspace,))
+        c.execute("DELETE FROM home_chat WHERE workspace=?", (workspace,))
 
 
 def purge_expired(store, now):
@@ -243,7 +244,8 @@ def install(app, settings, templates, spawn):
             return await call_next(request)
         if request.state.workspace is None:
             return RedirectResponse("/", 303) if request.method == "GET" else JSONResponse({"error": "Start your demo first."}, 404)
-        if owner_of(store, path) not in (None, request.state.workspace):
+        owner = owner_of(store, path)
+        if (owner is None and path not in ("/inbox", "/sweep", "/home/chat")) or (owner is not None and owner != request.state.workspace):
             return JSONResponse({"detail": "Not Found"}, 404)
         return await call_next(request)
 

@@ -233,3 +233,8 @@ cite::before{content:"Source: "}
 /* Collapsed stop-rule run (T16). */
 .gaterun summary{cursor:pointer;font-size:13px;color:var(--muted);margin-top:4px}
 .gaterun .gatebox{margin-top:8px}
+
+.home-chat input { flex: 1 1 24rem; min-width: 0; width: 100%; padding: .7rem; border: 1px solid var(--line); border-radius: 8px; color: inherit; background: transparent; font: inherit; }
+.home-chat label { width: 100%; }
+.home-chat-history { max-height: 17rem; overflow-y: auto; overflow-wrap: anywhere; }
+.home-chat-history p { margin: .5rem 0; white-space: pre-wrap; }

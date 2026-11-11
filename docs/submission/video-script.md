@@ -34,3 +34,7 @@ Harbor's tax-document renewal is fictional client policy, not a general claim th
 Do not add experimental success percentages or cost comparisons to the narration. If an experiment slide is used elsewhere, it must state: **Run 6 failed pre-registered scoring; semantic re-grading was post-hoc, one grader, ten synthetic cases.** No superiority or agent-only claim follows.
 
 Gmail login, actual email delivery, production payments and real customer outcomes are not demonstrated. The script is a recording plan, not completed footage or a measured runtime. Owner still needs to record, verify captions, export below three minutes and upload.
+
+Optional chat opening (within 0:00–0:14): type “Why hasn't Harbor paid?” in Ask Unstuck, show the start confirmation, and open its case link before continuing the Harbor sequence.
+For a short later insert, “What needs me this week?” reads the current brief; “Send the Harbor question” explains that chat cannot approve or send and links to the case.
+Record the actual returned state: existing checks may refuse a restart, and starting a check is not a confirmed cause or a completed payment.

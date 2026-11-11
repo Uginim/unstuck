@@ -21,6 +21,7 @@ from .store import Store
 from .brief_email import money_brief, question_links, action_links
 from .unbilled import validate_create, duplicate_item, agreement_refs
 from .scope import change_drafts
+from . import home_chat
 from . import chat
 from . import workspaces
 
@@ -36,10 +37,10 @@ class DemoInvestigator(Investigator):
         super().__init__(*args)
         self.call_lock = asyncio.Lock()
 
-    async def call(self, case_id, messages):
+    async def call(self, case_id, messages, **kwargs):
         async with self.call_lock:
             try:
-                return await super().call(case_id, messages)
+                return await super().call(case_id, messages, **kwargs)
             except BudgetExceeded as exc:
                 raise BudgetExceeded(BUDGET_MESSAGE) from exc
 
@@ -172,6 +173,47 @@ async def sweep(app, allow_start, workspace=""):
         st["running"] = False
 
 
+def start_work(app, kind, case_id=None, *, workspace="", allow_start=None):
+    """The same authority and guards for buttons and home chat; no approvals here."""
+    store = app.state.store
+    href = "/case/" + case_id if case_id else "/"
+    if kind == "sweep":
+        st = sweep_state(app, workspace)
+        if st["running"]:
+            return {"error": "A sweep is already running.", "href": "/"}
+        st["running"] = True
+        spawn(sweep(app, allow_start, workspace))
+        return {"ok": True, "href": "/"}
+    source = store.case(case_id)
+    if not source or source["workspace"] != workspace:
+        return {"error": "Client not found in this workspace.", "href": "/"}
+    if kind in ("scope", "unbilled"):
+        check = (store.scope_case(source, create=True) if kind == "scope"
+                 else unbilled_run(app, source, create=True))
+        href = "/case/" + check["id"]
+        if not store.claim_case(check["id"]):
+            return {"error": "This client check already exists. Review its questions and proposals.", "href": href}
+        spawn(app.state.agent.start(check["id"]))
+        return {"ok": True, "href": href}
+    if kind == "investigate":
+        c = store.case(case_id)
+        if c.get("mode") in ("unbilled", "scope") and c["state"] == "done":
+            return {"error": "This client check already exists. Review its questions and proposals.", "href": href}
+        if any(a["state"] in ("proposed", "running", "ready_to_send") for a in store.actions(case_id)):
+            return {"error": "Review pending actions before restarting.", "href": href}
+        if c["state"] in ("running", "needs_approval", "waiting_reply"):
+            return {"error": "already running", "href": href}
+        if c["state"] != "new":
+            store.save_case(case_id, state="new", final=None, messages=[], pending_results=[])
+            with store.db() as db:
+                for t in ("events", "questions"):
+                    db.execute(f"DELETE FROM {t} WHERE case_id=?", (case_id,))
+        store.save_case(case_id, state="running")
+        spawn(app.state.agent.start(case_id))
+        return {"ok": True, "href": href}
+    raise ValueError("Unknown start operation")
+
+
 async def periodic_sweep(app, hours, allow_start):
     while True:
         await asyncio.sleep(hours * 3600)
@@ -234,6 +276,7 @@ def create_app():
     app.state.agent = DemoInvestigator(store, inv, SCENARIOS, log)
     app.state.invoice_create_lock = asyncio.Lock()
     app.state.sweeps = {}
+    app.state.home_briefs = {}
     workspaces.install(app, settings, templates, lambda coro: spawn(coro))
     # shortcut: process-local counters; use shared limits before adding workers or instances.
     visitors = {}
@@ -264,7 +307,7 @@ def create_app():
             visitors[ip] = [now, 0, 0]
         counts = visitors[ip]
         path = request.url.path.rstrip("/")
-        uses_model = (path.startswith("/case/") and path.endswith(("/investigate", "/unbilled", "/scope", "/chat"))) or path == "/sweep" or (
+        uses_model = (path.startswith("/case/") and path.endswith(("/investigate", "/unbilled", "/scope", "/chat"))) or path in ("/sweep", "/home/chat") or (
             path.startswith("/questions/") and path.endswith(("/reply", "/skip")))
         retry = max(1, math.ceil(3600 - (now - counts[0])))
         if counts[1] >= 120 or (uses_model and counts[2] >= 20):
@@ -284,6 +327,7 @@ def create_app():
         return await call_next(request)
     app.mount("/static", StaticFiles(directory=HERE / "static"), name="static")
     chat.add_routes(app, lambda coro: spawn(coro))
+    home_chat.add_routes(app, start_work)
     scen = {s["key"]: s for s in SCENARIOS}
 
     def need_case(case_id):
@@ -317,9 +361,11 @@ def create_app():
             rows.append({**current, "live": live, "unbilled": check, "scope": store.scope_case(current),
                          "attention": attention(current), "unbilled_attention": attention(check)})
         st = sweep_state(app, ws)
-        return templates.TemplateResponse(request, "home.html", {"rows": rows, "brief": money_brief(store, rows, workspace=ws), "me": FREELANCER, "sweep_status": st["status"], "sweep_running": st["running"],
+        brief = money_brief(store, rows, workspace=ws)
+        app.state.home_briefs[ws] = brief
+        return templates.TemplateResponse(request, "home.html", {"rows": rows, "chat_history": store.home_exchanges(ws), "brief": brief, "me": FREELANCER, "sweep_status": st["status"], "sweep_running": st["running"],
             "workspace_expires": workspaces.expires_at(request),
-            "refreshing": st["running"] or any(r["state"] == "running" or (r["unbilled"] and r["unbilled"]["state"] == "running") for r in rows)})
+            "refreshing": st["running"] or any(r["state"] == "running" or (r["unbilled"] and r["unbilled"]["state"] == "running") or (r["scope"] and r["scope"]["state"] == "running") for r in rows)})
 
     @app.get("/case/{case_id}", response_class=HTMLResponse)
     async def case_page(request: Request, case_id: str):
@@ -348,47 +394,30 @@ def create_app():
 
     @app.post("/sweep")
     async def start_sweep(request: Request):
-        st = sweep_state(app, request.state.workspace)
-        if st["running"]:
-            return JSONResponse({"error": "A sweep is already running."}, 409)
-        st["running"] = True
-        spawn(sweep(app, request.state.allow_sweep_start, request.state.workspace))
+        result = start_work(app, "sweep", workspace=request.state.workspace, allow_start=request.state.allow_sweep_start)
+        if "error" in result:
+            return JSONResponse({"error": result["error"]}, 409)
         if "text/html" in request.headers.get("accept", ""):
             return RedirectResponse("/", 303)
         return {"ok": True}
 
     @app.post("/case/{case_id}/scope")
-    async def check_scope(case_id: str):
-        check = store.scope_case(need_case(case_id), create=True)
-        if store.claim_case(check["id"]):
-            spawn(app.state.agent.start(check["id"]))
-        return RedirectResponse(f"/case/{check['id']}", 303)
+    async def check_scope(request: Request, case_id: str):
+        need_case(case_id)
+        result = start_work(app, "scope", case_id, workspace=request.state.workspace)
+        return RedirectResponse(result["href"], 303)
 
     @app.post("/case/{case_id}/unbilled")
-    async def check_unbilled(case_id: str):
-        source = need_case(case_id)
-        check = unbilled_run(app, source, create=True)
-        if store.claim_case(check["id"]):
-            spawn(app.state.agent.start(check["id"]))
-        return RedirectResponse(f"/case/{check['id']}", 303)
+    async def check_unbilled(request: Request, case_id: str):
+        need_case(case_id)
+        result = start_work(app, "unbilled", case_id, workspace=request.state.workspace)
+        return RedirectResponse(result["href"], 303)
 
     @app.post("/case/{case_id}/investigate")
-    async def investigate(case_id: str):
-        c = need_case(case_id)
-        if c.get("mode") in ("unbilled", "scope") and c["state"] == "done":
-            return JSONResponse({"error": "This client check already exists. Review its questions and proposals."}, 409)
-        if any(a["state"] in ("proposed", "running", "ready_to_send") for a in store.actions(case_id)):
-            return JSONResponse({"error": "Review pending actions before restarting."}, 409)
-        if c["state"] in ("running", "needs_approval", "waiting_reply"):
-            return JSONResponse({"error": "already running"}, 409)
-        if c["state"] != "new":
-            store.save_case(case_id, state="new", final=None, messages=[], pending_results=[])
-            with store.db() as db:
-                for t in ("events", "questions"):
-                    db.execute(f"DELETE FROM {t} WHERE case_id=?", (case_id,))
-        store.save_case(case_id, state="running")
-        spawn(app.state.agent.start(case_id))
-        return {"ok": True}
+    async def investigate(request: Request, case_id: str):
+        need_case(case_id)
+        result = start_work(app, "investigate", case_id, workspace=request.state.workspace)
+        return JSONResponse({"error": result["error"]}, 409) if "error" in result else {"ok": True}
 
     @app.post("/questions/{qid}/reply")
     async def reply(qid: int, request: Request):
