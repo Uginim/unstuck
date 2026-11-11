@@ -156,7 +156,7 @@ async def test_tampered_cookie_gets_no_workspace(public, tamper):
         assert (await call(b, 'GET', f'/api/case/{case["id"]}')).status_code == 303
         assert (await call(b, 'POST', f'/case/{case["id"]}/investigate')).status_code == 404
         home = (await call(b, 'GET', '/')).text
-        assert 'Start my demo' in home and case['id'] not in home
+        assert 'Create account' in home and case['id'] not in home
 
 
 async def test_creation_caps_per_ip_and_per_day(public):
@@ -186,7 +186,7 @@ async def test_expired_workspace_is_closed_purged_and_not_reused(public):
         with store.db() as db:
             db.execute('UPDATE workspaces SET expires=? WHERE id=?', (time.time() - 1, old))
         home = await call(a, 'GET', '/')
-        assert 'expired' in home.text and 'Start my demo' in home.text
+        assert 'expired' in home.text and 'Create account' in home.text
         assert f'{workspaces.COOKIE}=""' in home.headers['set-cookie']
         assert (await call(a, 'GET', f'/case/{case["id"]}')).status_code == 303
         new = await started(call, a)
@@ -203,7 +203,7 @@ async def test_seeding_failure_cancels_partial_invoices_and_offers_retry(public)
         assert workspaces.row(store, ws)['state'] == 'failed'
         assert inv.cancelled == ['INV-1', 'INV-2'] and store.cases(workspace=ws) == []
         home = await call(a, 'GET', '/')
-        assert 'did not accept' in home.text and 'Start my demo' in home.text
+        assert 'did not accept' in home.text and 'Create account' in home.text
         assert (await call(a, 'GET', '/inbox')).status_code == 303
         inv.fail_at = None
         retry = await started(call, a)

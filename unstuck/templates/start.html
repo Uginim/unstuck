@@ -15,14 +15,28 @@
   <h1>Unpaid invoices, explained</h1>
   <p>Unstuck finds out <em>why</em> a client hasn't paid, by reading your mail, checking PayPal and asking the
   right person, then proposes a fix you approve.</p>
-  {% if state == 'expired' %}<p class="notice" role="status">Your demo expired. Demos are kept for {{ hours|round|int }} hours and are not reused. You can start a new one.</p>
-  {% elif state == 'failed' %}<p class="notice bad" role="status">{{ (row and row.error) or 'Setting up your demo stopped before it finished.' }} You can try again.</p>
-  {% elif state == 'limit' %}<p class="notice bad" role="status">{{ reason }} Please try again tomorrow. Meanwhile you can read the <a href="/sample">sample</a>.</p>{% endif %}
-  {% if state != 'limit' %}
-  <p>You get a private demo: five fresh PayPal <b>sandbox</b> invoices that only you can see and act on, kept for
-  {{ hours|round|int }} hours. No real money or email.</p>
-  <form method="post" action="/workspace" class="btns"><button class="primary big">Start my demo</button></form>
-  {% endif %}
+  {% if state == 'expired' %}<p class="notice bad" role="status">Your demo expired. Create a new account to start again.</p>
+  {% elif state == 'failed' %}<p class="notice bad" role="status">{{ (row and row.error) or 'Setting up your demo stopped before it finished.' }} Create an account again to retry.</p>
+  {% elif state == 'limit' %}<p class="notice bad" role="status">{{ reason }} Please try again tomorrow. You can still log in to an existing account.</p>{% endif %}
+  <p>Your account keeps your private sandbox cases and chats for {{ account_days|round|int }} days. Log back in to pick up where you left off.</p>
+  <p class="small muted">Any email works; we never send mail. Don't reuse a real password.</p>
+  {% if auth_error %}<p class="notice bad" role="alert">{{ auth_error }}</p>{% endif %}
+  <div class="auth-grid">
+  <form method="post" action="/signup" class="panel auth-form">
+    <h2>Create account</h2>
+    <p class="small muted">Five fresh PayPal sandbox invoices. No real money.</p>
+    <label for="signup-email">Email</label><input id="signup-email" name="email" type="email" autocomplete="username" maxlength="254" required>
+    <label for="signup-password">Password <span class="muted small">(at least 8 characters)</span></label><input id="signup-password" name="password" type="password" autocomplete="new-password" minlength="8" maxlength="1024" required>
+    <button class="primary" type="submit">Create account</button>
+  </form>
+  <form method="post" action="/login" class="panel auth-form">
+    <h2>Log in</h2>
+    <p class="small muted">Return to your cases and conversations.</p>
+    <label for="login-email">Email</label><input id="login-email" name="email" type="email" autocomplete="username" maxlength="254" required>
+    <label for="login-password">Password</label><input id="login-password" name="password" type="password" autocomplete="current-password" maxlength="1024" required>
+    <button class="primary" type="submit">Log in</button>
+  </form>
+  </div>
   <p class="small"><a href="/sample">Read-only sample</a></p>
   {% endif %}
 </section>

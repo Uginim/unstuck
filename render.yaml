@@ -39,3 +39,5 @@ services:
         value: "60"
       - key: UNSTUCK_WORKSPACE_HOURS
         value: "48"
+      - key: UNSTUCK_ACCOUNT_DAYS
+        value: "45"

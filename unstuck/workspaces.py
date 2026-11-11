@@ -1,7 +1,7 @@
 """Per-visitor demo workspaces for the public URL.
 
 UNSTUCK_MODE=local (default) keeps one shared workspace '' and today's behavior. UNSTUCK_MODE=public gives
-each visitor who presses "Start my demo" a private workspace: a signed HttpOnly cookie names it, fresh PayPal
+each demo account (or legacy cookie-only visitor) a private workspace: a signed HttpOnly cookie names it, fresh PayPal
 sandbox invoices are created for it in the background, and every id-bearing route answers 404 for ids that
 belong to another workspace. Workspace cases carry their workspace in the scenario key ("harbor~<id>"), which
 also gives each workspace its own recipient alias ("jordan.lee+<id>@...") so duplicate checks never collide.
@@ -14,6 +14,7 @@ import math
 import os
 import re
 import secrets
+import sqlite3
 import time
 import uuid
 from copy import deepcopy
@@ -21,6 +22,7 @@ from copy import deepcopy
 from fastapi import Request
 from fastapi.responses import JSONResponse, RedirectResponse
 
+from . import accounts
 from .invoicing import InvoicingError
 from .scenarios import FREELANCER, SCENARIOS
 from .store import WORKSPACE_SEP, workspace_of
@@ -29,7 +31,7 @@ COOKIE = "unstuck_ws"
 SCHEMA = """CREATE TABLE IF NOT EXISTS workspaces (
   id TEXT PRIMARY KEY, ip TEXT, created REAL, expires REAL, state TEXT, seeded INTEGER DEFAULT 0, error TEXT);"""
 # Paths without a private id: the start page, the read-only sample and static files work without a workspace.
-OPEN_PATHS = ("/", "/health", "/sample", "/workspace", "/demo/reset")
+OPEN_PATHS = ("/", "/health", "/sample", "/workspace", "/demo/reset", "/signup", "/login", "/logout")
 ID_PATHS = (
     (re.compile(r"^/(?:api/)?case/([^/]+)"), "case"),
     (re.compile(r"^/questions/(\d+)"), "questions"),
@@ -47,6 +49,9 @@ class Settings:
             raise ValueError("UNSTUCK_SESSION_SECRET must be at least 32 characters in public mode")
         self.per_ip = int(env.get("UNSTUCK_WORKSPACES_PER_IP", "3"))
         self.per_day = int(env.get("UNSTUCK_WORKSPACES_PER_DAY", "60"))
+        self.account_days = float(env.get("UNSTUCK_ACCOUNT_DAYS", "45"))
+        if not math.isfinite(self.account_days) or self.account_days <= 0:
+            raise ValueError("UNSTUCK_ACCOUNT_DAYS must be finite and positive")
         self.hours = float(env.get("UNSTUCK_WORKSPACE_HOURS", "48"))
         if self.per_ip < 0 or self.per_day < 0 or not math.isfinite(self.hours) or self.hours <= 0:
             raise ValueError("Workspace limits must be non-negative and UNSTUCK_WORKSPACE_HOURS positive")
@@ -114,7 +119,7 @@ def client_ip(request):
 # ---------- workspace rows ----------
 def ensure(store):
     with store.db() as c:
-        c.executescript(SCHEMA)
+        c.executescript(SCHEMA + accounts.SCHEMA)
 
 
 def row(store, workspace):
@@ -143,6 +148,7 @@ def delete_cases(store, workspace):
             c.executemany(f"DELETE FROM {t} WHERE case_id=?", [(i,) for i in ids])
         c.execute("DELETE FROM cases WHERE workspace=?", (workspace,))
         c.execute("DELETE FROM home_chat WHERE workspace=?", (workspace,))
+        c.execute("DELETE FROM accounts WHERE workspace=?", (workspace,))
 
 
 def purge_expired(store, now):
@@ -233,12 +239,15 @@ def install(app, settings, templates, spawn):
     @app.middleware("http")
     async def workspace_guard(request, call_next):
         request.state.workspace, request.state.workspace_row = "", None
+        request.state.account = None
         if not settings.public:
             return await call_next(request)
         store, path = app.state.store, request.url.path.rstrip("/") or "/"
         r = row(store, verify(settings.secret, request.cookies.get(COOKIE)) or "")
         request.state.workspace_row = r
         state = status(app, r)
+        if r and state != "expired":
+            request.state.account = accounts.email_for(store, r["id"])
         request.state.workspace = r["id"] if state == "ready" else None
         if path in OPEN_PATHS or path.startswith("/static/"):
             return await call_next(request)
@@ -253,7 +262,7 @@ def install(app, settings, templates, spawn):
         r = request.state.workspace_row
         ctx.setdefault("state", status(app, r))
         resp = templates.TemplateResponse(request, "start.html", {
-            "me": FREELANCER, "row": r, "total": len(SCENARIOS), "hours": settings.hours,
+            "me": FREELANCER, "row": r, "total": len(SCENARIOS), "hours": settings.hours, "account_days": settings.account_days,
             "queued": bool(r and app.state.seed_active not in (None, r["id"]) and not r["seeded"]), **ctx},
             status_code=status_code)
         if ctx["state"] == "expired":
@@ -262,12 +271,16 @@ def install(app, settings, templates, spawn):
 
     app.state.workspace_page = page
 
-    @app.post("/workspace")
-    async def start(request: Request):
-        if not settings.public:
-            return RedirectResponse("/", 303)
+    def cookie_response(request, workspace, expires):
+        resp = RedirectResponse("/", 303)
+        resp.set_cookie(COOKIE, sign(settings.secret, workspace), max_age=max(0, int(expires - time.time())),
+                        httponly=True, samesite="lax",
+                        secure=request.url.scheme == "https" or os.environ.get("RENDER") == "true", path="/")
+        return resp
+
+    def create_workspace(request, account=None):
         now, store = time.time(), app.state.store
-        if status(app, request.state.workspace_row) in ("ready", "seeding"):
+        if account is None and status(app, request.state.workspace_row) in ("ready", "seeding"):
             return RedirectResponse("/", 303)
         ip = hashlib.sha256((settings.secret + client_ip(request)).encode()).hexdigest()[:16]
         day = now - 86400
@@ -277,15 +290,29 @@ def install(app, settings, templates, spawn):
             return page(request, 429, state="limit", reason="The demo reached today's limit of new visitors.")
         purge_expired(store, now)
         workspace = secrets.token_hex(6)
-        with store.db() as c:
-            c.execute("INSERT INTO workspaces (id, ip, created, expires, state) VALUES (?,?,?,?,'seeding')",
-                      (workspace, ip, now, now + settings.hours * 3600))
+        expires = now + (settings.account_days * 86400 if account else settings.hours * 3600)
+        try:
+            with store.db() as c:
+                c.execute("INSERT INTO workspaces (id, ip, created, expires, state) VALUES (?,?,?,?,'seeding')",
+                          (workspace, ip, now, expires))
+                if account:
+                    c.execute("INSERT INTO accounts(email,salt,hash,workspace,created) VALUES (?,?,?,?,?)",
+                              (*account, workspace, now))
+        except sqlite3.IntegrityError:
+            return page(request, 400, state="auth", auth_error="An account with this email already exists. Please log in.")
         app.state.seeding.add(workspace)
         spawn(seed(app, workspace))
-        resp = RedirectResponse("/", 303)
-        resp.set_cookie(COOKIE, sign(settings.secret, workspace), max_age=int(settings.hours * 3600), httponly=True,
-                        samesite="lax", secure=os.environ.get("RENDER") == "true", path="/")
-        return resp
+        return cookie_response(request, workspace, expires)
+
+    @app.post("/workspace")
+    async def start(request: Request):
+        # Keep the old cookie-only endpoint for existing demos; the UI offers accounts.
+        if not settings.public:
+            return RedirectResponse("/", 303)
+        return create_workspace(request)
+
+    if settings.public:
+        accounts.install(app, page, create_workspace, cookie_response)
 
     @app.get("/sample")
     async def sample(request: Request):

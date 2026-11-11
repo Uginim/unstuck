@@ -122,6 +122,9 @@ class Store:
         with self.db() as c:
             for t in ("cases", "events", "questions", "actions", "documents", "home_chat"):
                 c.execute(f"DELETE FROM {t}")
+            for table in ("accounts", "workspaces"):
+                if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?", (table,)).fetchone():
+                    c.execute(f"DELETE FROM {table}")
 
     def add_document(self, case_id, title, text):
         import uuid

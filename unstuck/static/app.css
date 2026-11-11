@@ -266,3 +266,16 @@ cite::before{content:"Source: "}
 #home-chat-status:empty{display:none}
 #home-chat-status{color:var(--bad);margin:8px 2px 0}
 @media (max-width:600px){.msg{max-width:92%}.hc-suggest{flex-wrap:nowrap;overflow-x:auto;padding-bottom:4px;scrollbar-width:none}.chip{flex:none}}
+
+/* Public demo accounts. */
+.auth-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:20px;margin:24px 0;text-align:left}
+.auth-form{display:flex;flex-direction:column;gap:10px;margin:0;min-width:0}
+.auth-form h2,.auth-form p{margin:0 0 8px}
+.auth-form label{font-size:14px;font-weight:600}
+.auth-form input{width:100%;min-width:0;box-sizing:border-box;padding:11px 12px;border:1px solid var(--line2);border-radius:8px;background:var(--bg);color:var(--ink);font:inherit;margin-bottom:8px}
+.auth-form input:focus{outline:2px solid var(--brand);outline-offset:2px}
+.auth-form button{align-self:flex-start;margin-top:auto}
+.who .account-email{max-width:240px;overflow-wrap:anywhere;white-space:normal}
+.who form{margin:0;flex:none}
+.who button{white-space:nowrap}
+@media(max-width:640px){.auth-grid{grid-template-columns:1fr}.who .account-email{max-width:180px}}

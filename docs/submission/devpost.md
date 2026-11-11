@@ -53,3 +53,7 @@ Test usefulness with freelancers using consented data. Add authenticated, isolat
 ## Built with
 
 PayPal Sandbox Invoicing v2, Claude through the Anthropic Messages API, Python, FastAPI, Uvicorn, HTTPX, Jinja2, SQLite, HTML, CSS and JavaScript. Gmail compose links open the user's mail application; there is no Gmail API integration.
+
+## Testing instructions
+
+Create an account with any email; no mail is sent.
