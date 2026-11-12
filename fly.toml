@@ -1,0 +1,43 @@
+# Fly.io deploy for the public Unstuck demo (personal org, region Tokyo).
+# Secrets (set with `fly secrets set`, never in this file):
+#   PAYPAL_CLIENT_ID, PAYPAL_CLIENT_SECRET, ANTHROPIC_API_KEY, UNSTUCK_SESSION_SECRET
+app = 'unstuck-demo'
+primary_region = 'nrt'
+
+[build]
+  dockerfile = 'Dockerfile'
+
+[env]
+  PORT = '10000'
+  FORWARDED_ALLOW_IPS = '*'
+  UNSTUCK_MODE = 'public'
+  UNSTUCK_DB = '/app/data/unstuck.db'
+  UNSTUCK_LOG = '/app/data/unstuck.jsonl'
+  UNSTUCK_DAILY_USD = '3'
+  UNSTUCK_WORKSPACES_PER_IP = '3'
+  UNSTUCK_WORKSPACES_PER_DAY = '60'
+  UNSTUCK_WORKSPACE_HOURS = '48'
+  UNSTUCK_ACCOUNT_DAYS = '45'
+
+[[mounts]]
+  source = 'unstuck_data'
+  destination = '/app/data'
+
+[http_service]
+  internal_port = 10000
+  force_https = true
+  auto_stop_machines = 'stop'
+  auto_start_machines = true
+  min_machines_running = 0
+
+[[http_service.checks]]
+  grace_period = '20s'
+  interval = '30s'
+  method = 'GET'
+  timeout = '5s'
+  path = '/health'
+
+[[vm]]
+  cpu_kind = 'shared'
+  cpus = 1
+  memory_mb = 256

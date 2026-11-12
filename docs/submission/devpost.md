@@ -6,7 +6,9 @@ For a freelancer, the money side of client work spans more than overdue invoices
 
 ## What it does
 
-Unstuck starts with a weekly money brief: what needs your approval, where you are waiting on a client, what is unclear, and what PayPal reports as owed. It is a current snapshot of tracked work, with totals separated by currency, not a weekly revenue report.
+In the hosted demo, a visitor creates a demo account (any email; nothing is sent to it and it is not verified) and gets a private workspace with five fresh PayPal Sandbox invoices for fictional clients, kept for 45 days. Logging back in returns to the same cases and conversations.
+
+The home page has **Ask Unstuck**, a chat that can start one of the existing checks ("Why hasn't Quill paid?", "Did I forget to bill anyone?") or answer from the current brief. It cannot approve, send or change an invoice. Below it, a weekly money brief shows what needs your approval, where you are waiting on a client, what is unclear, and what PayPal reports as owed. It is a current snapshot of tracked work, with totals separated by currency, not a weekly revenue report.
 
 The freelancer can investigate an unpaid invoice, check for agreed and delivered but unbilled work, or check whether a new request is included in the contract. Claude chooses what evidence to read and can propose a specific question to a named contact. The freelancer can redirect the investigation or ask why through case chat. Chat instructions never approve an action.
 
@@ -20,7 +22,7 @@ Python and FastAPI serve the interface. SQLite stores transcripts, questions, ap
 
 The same loop handles investigation, unbilled work and scope checks. Code checks quoted sentences against stored sources, validates action fields and restricts available operations. It does not prove that a quote supports the model's interpretation. A limited English lexical check also rejects selected unsupported completion and attachment claims in drafts/reminder notes. It can miss other phrasing and does not establish general factual correctness. The model can still be wrong.
 
-The PayPal Invoicing v2 Sandbox adapter reads invoices, searches a client's invoices, sends approved reminders, updates partial-payment settings and creates/sends approved invoices. Financial execution rereads PayPal and checks the result. The brief reuses stored results and existing invoice reads without new model calls. Chat uses the same gates and approval controls.
+The PayPal Invoicing v2 Sandbox adapter reads invoices, searches a client's invoices, sends approved reminders, updates partial-payment settings and creates/sends approved invoices. All of these use one Sandbox merchant account configured for the app; users do not connect their own PayPal accounts. Each demo workspace gets its own invoices and fictional recipient addresses, so one visitor's approvals do not change another visitor's invoices. Financial execution rereads PayPal and checks the result. The brief reuses stored results and existing invoice reads without new model calls. Home chat and case chat use the same gates and approval controls; home chat can only call the four start tools.
 
 ## Challenges
 
@@ -48,7 +50,7 @@ Run 6 of our earlier investigation experiment **failed its pre-registered scorin
 
 ## What's next
 
-Test usefulness with freelancers using consented data. Add authenticated, isolated workspaces before handling real customer information. Evaluate mailbox integration separately from today's compose-link workflow. Strengthen semantic validation, duplicate detection and recovery after uncertain writes, and repeat evaluation with fresh cases, preregistered scoring and independent graders.
+Test usefulness with freelancers using consented data. Demo accounts are not production identity: there is no email verification, password recovery or per-user PayPal connection, and every workspace uses the same Sandbox merchant. Those must come before handling real customer information. Evaluate mailbox integration separately from today's compose-link workflow. Strengthen semantic validation, duplicate detection and recovery after uncertain writes, and repeat evaluation with fresh cases, preregistered scoring and independent graders.
 
 ## Built with
 
@@ -56,4 +58,6 @@ PayPal Sandbox Invoicing v2, Claude through the Anthropic Messages API, Python, 
 
 ## Testing instructions
 
-Create an account with any email; no mail is sent.
+Open the demo URL (https://unstuck-demo.fly.dev; the first visit after idle can take a few seconds to wake) and create an account with any email and a throwaway password (8+ characters); no mail is sent. Setup creates five Sandbox invoices, which takes about half a minute. Then type a question in **Ask Unstuck** (for example "Why hasn't Harbor & Vine paid?") or use the buttons on a client card. Approvals are always buttons on the case page. "Open in Gmail" only opens a compose window; to continue a question, mark it sent and submit the pre-filled reply in **Simulated client inbox**.
+
+Limits: 3 new accounts per network per day and 60 per day in total; 10 failed logins per network per 15 minutes; a shared daily AI budget (USD 3, resets at UTC midnight) after which existing results stay readable; per-network request limits per hour. Accounts and their workspaces expire after 45 days. All PayPal calls go to one Sandbox merchant; no real money moves.

@@ -31,7 +31,7 @@
 <section class="panel money-brief" aria-labelledby="brief-title">
   <h1 id="brief-title">Weekly money brief</h1>
   <p class="small muted">Current snapshot, not a weekly revenue report. Read <time id="brief-read" datetime="{{ brief.read_at }}" title="{{ brief.read_at }}">{{ brief.read_at[:10] }} {{ brief.read_at[11:16] }} UTC</time>. No extra AI calls.</p>
-  <script>{const t = document.getElementById("brief-read"); t.textContent = new Date(t.dateTime).toLocaleString(undefined, {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23"});}</script>
+  <script>{const t = document.getElementById("brief-read"); t.textContent = new Date(t.dateTime).toLocaleString("en-US", {month: "short", day: "numeric", hour: "2-digit", minute: "2-digit", hourCycle: "h23"});}</script>
   <div class="brief-grid">
   {% for heading, lines in brief.groups.items() %}
     <section><h2>{{ heading }}</h2><ul>

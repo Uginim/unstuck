@@ -2,12 +2,15 @@
 
 Unstuck helps a freelancer manage the money side of client work: what's stuck, what's unbilled, what's out of scope, and what needs attention this week. PayPal Invoicing is the system of record for invoice status and outstanding balances. Claude reads the available workspace evidence and proposes questions or next steps for the freelancer to review.
 
+**Live demo:** https://unstuck-demo.fly.dev (create an account with any email; no mail is sent). The first visit after idle can take a few seconds to wake.
+
 **This is a sandbox prototype.** Clients, emails, contracts, rate cards and work records are fictional, seeded text. PayPal operations use Sandbox. The app does not read a real mailbox or send correspondence: it prepares Gmail/default-mail compose links, the user sends from their own email app, and replies are pasted back. The simulated client inbox is an alternative for the demo. No recovered revenue or real customer outcome is claimed.
 
 ## What you can do
 
 | Task | Workflow | Boundary |
 |---|---|---|
+| Ask in plain words | **Ask Unstuck** on the home page starts one of the checks below ("Why hasn't Quill paid?", "Did I forget to bill anyone?") or answers from the current brief. | It can only start the four existing checks. It cannot approve, send or change an invoice; those stay buttons on the case page. |
 | Decide what to do this week | The money brief groups approval requests, client replies awaited, unresolved decisions and balances owed by currency. | A current snapshot of tracked cases, not seven-day accounting or a cash forecast. It makes no extra model calls. |
 | Find why an invoice is unpaid | **Find out why** searches documents, reads PayPal and can ask a named contact about missing evidence. | A conclusion can be wrong even when its quote exists. |
 | Find agreed work not yet billed | **Check for unbilled work** compares approval/delivery records with the client's PayPal invoices. | Only evidenced work can become a proposed new invoice; creation and sending need a separate approval. |
@@ -17,8 +20,8 @@ Unstuck helps a freelancer manage the money side of client work: what's stuck, w
 
 ## How it works
 
-1. Start from the brief or an invoice. Choose an investigation, unbilled check or scope check.
-2. Claude, through the Anthropic Messages API, chooses searches, document reads, PayPal reads and questions. The timeline records those steps.
+1. In the hosted demo, create an account (any email, a throwaway password). Then start from **Ask Unstuck**, the brief or an invoice card. Choose an investigation, unbilled check or scope check.
+2. Claude, through the Anthropic Messages API, chooses searches, document reads, PayPal reads and questions. The timeline records those steps. The home chat makes one Messages API call per message with only the four start tools available; the checks it starts run the same loop as the buttons.
 3. A question pauses the loop. **Approve question** prepares a fixed-recipient draft. **Open in Gmail** or the default-mail link opens it in the user's mail app. The user sends there, then selects **I sent it**. The app says **Ready to send** or **You marked as sent**, not delivery confirmed.
 4. Paste the client's reply on the case page. For the fictional walkthrough, use **Simulated client inbox (demo)** instead. The submitted text becomes evidence and resumes the same investigation.
 5. Review the result, quotes and proposed actions. Each action has separate approval controls. Approving an email draft prepares a compose link; approving a PayPal action invokes the corresponding Sandbox operation.
@@ -77,6 +80,8 @@ UNSTUCK_AUTOCREATE=0 .venv/bin/python -m uvicorn unstuck.app:create_app --factor
 
 Open `http://127.0.0.1:8101/`. A blank database seeds the five fictional scenarios as Sandbox invoices, including Atlas's synthetic external-payment record. Startup therefore makes Sandbox writes. Investigations and chat incur model usage; page refreshes can read PayPal.
 
+To try the hosted flow locally, add `UNSTUCK_MODE=public` and a random `UNSTUCK_SESSION_SECRET` of at least 32 characters. The start page then shows **Create account / Log in**, and each new account seeds its own five Sandbox invoices.
+
 | Optional variable | Default | Purpose |
 |---|---|---|
 | `UNSTUCK_MODEL` | `claude-haiku-5-5` | Anthropic model identifier; account availability may vary. |
@@ -85,10 +90,11 @@ Open `http://127.0.0.1:8101/`. A blank database seeds the five fictional scenari
 | `UNSTUCK_LOG` | `logs/unstuck.jsonl` | Request/response log; keep private. |
 | `UNSTUCK_SWEEP_HOURS` | `0` | Optional sweep interval; zero disables periodic sweeps. |
 | `UNSTUCK_AUTOCREATE` | `1` | Set to zero with the factory command to avoid a second app at import. |
-| `UNSTUCK_MODE` | `local` | `local`: one shared workspace, seeded at startup. `public` (Docker/Render default): each visitor presses **Start my demo** and gets a private workspace with its own Sandbox invoices. |
-| `UNSTUCK_SESSION_SECRET` | none | Required in `public` mode, at least 32 characters; signs the HttpOnly workspace cookie. |
-| `UNSTUCK_WORKSPACES_PER_IP` / `_PER_DAY` | `3` / `60` | New public workspaces per network and in total per rolling 24 hours. Each one creates five Sandbox invoices. |
-| `UNSTUCK_WORKSPACE_HOURS` | `48` | Public workspace lifetime. Expired workspaces are deleted from the DB and never reused. |
+| `UNSTUCK_MODE` | `local` | `local`: one shared workspace, seeded at startup, no login. `public` (Docker default): visitors **Create account / Log in**; each account owns a private workspace with its own Sandbox invoices. |
+| `UNSTUCK_SESSION_SECRET` | none | Required in `public` mode, at least 32 characters; signs the HttpOnly workspace cookie. Changing it logs everyone out. |
+| `UNSTUCK_WORKSPACES_PER_IP` / `_PER_DAY` | `3` / `60` | New public accounts (workspaces) per network and in total per rolling 24 hours. Each one creates five Sandbox invoices. |
+| `UNSTUCK_ACCOUNT_DAYS` | `45` | Account and workspace lifetime from signup. Logging in does not extend it. Expired accounts are deleted from the DB; their Sandbox invoices stay. |
+| `UNSTUCK_WORKSPACE_HOURS` | `48` | Lifetime of older cookie-only workspaces without an account. |
 
 Do not use empty numeric settings. Create a custom DB's parent directory first. Logs can contain full documents, model exchanges and payment responses. Keep `.env`, logs and databases out of Git and screenshots.
 
@@ -108,7 +114,7 @@ Public **Reset demo is disabled**. In `public` mode a visitor's actions only tou
 
 ## Verification and limits
 
-The 2026-11-11 combined HTTP rehearsal against PayPal Sandbox confirmed the brief, question approval and pasted-reply flow, Quill's partial-payment setting, Signal's new SENT invoice and duplicate-approval refusal, Cedar's scope draft, owner chat and a sweep with no financial writes. The reported final suite was **420 passed, 19 subtests passed**, with JavaScript syntax checks passing.
+The 2026-11-11 combined HTTP rehearsal against PayPal Sandbox confirmed the brief, question approval and pasted-reply flow, Quill's partial-payment setting, Signal's new SENT invoice and duplicate-approval refusal, Cedar's scope draft, owner chat and a sweep with no financial writes. The suite reported then was **420 passed, 19 subtests passed**, with JavaScript syntax checks passing.
 
 **It was not an uncorrected all-pass demonstration.** Harbor and Atlas drafts claimed work had been done when it had not; the owner corrected them in chat before approval. Three implementation bugs were fixed and rechecked. Atlas's reminder POST was accepted, but PayPal's GET supplied no reminder history, so delivery was not independently verified. No correspondence was sent from Gmail and no payment was collected.
 
@@ -118,16 +124,40 @@ A follow-up T11 HTTP run checked Harbor and Atlas again without owner chat corre
 
 The exploratory investigation experiment is documented in [the results](experiments/f2_blockers/RESULTS.md). **Run 6 failed its pre-registered scoring.** Later semantic re-grading was post-hoc, with one grader on ten synthetic cases. It does not establish superiority, production accuracy, equal-quality cost savings or a capability available only to agents. That harness is not the deployed application.
 
-This is a synthetic-data prototype without user accounts. In `public` mode each browser gets a private demo workspace identified only by a signed cookie; clearing cookies loses access to it, and the daily model budget is shared by all visitors. It has no mailbox ingestion, automatic email delivery or reply detection. New-billing/scope amount handling is USD-oriented; separate currency totals in the brief are not general multi-currency accounting. Duplicate invoice checks are lexical and can miss or overblock matches. An exact quote is not a guarantee of agreement, delivery or correct interpretation.
+Later real-browser (Playwright, Chromium) checks covered the merged interface at desktop, phone and dark-mode sizes, the home chat and demo accounts, including logging out and back in to the same work and cross-account 404s. They did not re-observe Signal invoice creation with per-account recipient aliases. The latest local suite on 2026-11-12 is **517 passed, 19 subtests passed** (`.venv/bin/python -m pytest -q`), and `node --check unstuck/static/app.js` passes.
+
+This is a synthetic-data prototype. In `public` mode, demo accounts are an email identifier and a password: the email is never verified or written to, and there is no password recovery. Each account's workspace is private, but every workspace uses the same PayPal Sandbox merchant configured for the app; users do not connect their own PayPal accounts. The daily model budget is shared by all visitors. It has no mailbox ingestion, automatic email delivery or reply detection. New-billing/scope amount handling is USD-oriented; separate currency totals in the brief are not general multi-currency accounting. Duplicate invoice checks are lexical and can miss or overblock matches. An exact quote is not a guarantee of agreement, delivery or correct interpretation.
 
 The deployment assumes one process/instance. A hosted version needs persistent state, controlled secrets, budget monitoring and an owner responsible for availability. A compose URL includes the draft text and does not verify delivery. Do not use public demo forms for confidential client data.
+
+## Deploy on Fly.io (the hosted demo)
+
+[`fly.toml`](fly.toml) runs one Docker machine (shared CPU, 256 MB) built from the [`Dockerfile`](Dockerfile), with a 1 GB volume mounted at `/app/data` for the SQLite database, log and daily spend record. The machine stops when idle and starts on the next request.
+
+1. `fly apps create unstuck-demo` and `fly volumes create unstuck_data --app unstuck-demo --region nrt --size 1`.
+2. Set secrets without printing them: `fly secrets set --app unstuck-demo PAYPAL_CLIENT_ID=... PAYPAL_CLIENT_SECRET=... ANTHROPIC_API_KEY=... UNSTUCK_SESSION_SECRET=...` (PayPal **Sandbox** keys; keep the session secret stable across deploys).
+3. `fly deploy --ha=false`, then check that `/health` returns 200 and the home page shows **Create account / Log in**.
+
+Keep one machine and one worker: the visitor limits are process-local.
+
+## Deploy on Render (alternative)
+
+[`render.yaml`](render.yaml) is a Render Blueprint for one Docker web service (`unstuck-demo`, Starter plan, a single instance) built from the [`Dockerfile`](Dockerfile).
+
+1. In Render, choose **New → Blueprint**, connect this repository, and select `render.yaml`.
+2. Enter the three secrets Render asks for: your PayPal **Sandbox** `PAYPAL_CLIENT_ID` and `PAYPAL_CLIENT_SECRET`, and `ANTHROPIC_API_KEY`. `UNSTUCK_SESSION_SECRET` is generated by the Blueprint; keep it stable across deploys.
+3. Keep the 1 GB persistent disk mounted at `/app/data`. The SQLite database, the log and the daily spend record live there; without it a redeploy loses every account, case and the day's spend record.
+4. Deploy, then check that `/health` returns 200 and that the home page shows **Create account / Log in**.
+
+The Blueprint sets `UNSTUCK_MODE=public`, the visitor limits above and `UNSTUCK_DAILY_USD=3`. Auto-deploy is off; deploy manually. The limits are process-local, so keep one instance and one worker. Render's monthly charges and model usage are separate from this app's spend estimate.
 
 ## Code map
 
 - `unstuck/app.py`, `unstuck/store.py`: routes, approvals, SQLite state, sweep and execution.
 - `unstuck/agent.py`, `unstuck/prompt.md`: shared investigation loop and gates.
 - `unstuck/unbilled.py`, `unstuck/scope.py`, `unstuck/honesty.py`: evidence checks, change-agreement construction and limited draft-claim checks.
-- `unstuck/brief_email.py`, `unstuck/chat.py`: brief, compose links and owner instructions.
+- `unstuck/brief_email.py`, `unstuck/chat.py`, `unstuck/home_chat.py`: brief, compose links, case chat and the home Ask Unstuck chat.
+- `unstuck/workspaces.py`, `unstuck/accounts.py`: public-mode workspaces, signed cookies, demo accounts and limits.
 - `unstuck/invoicing.py`: PayPal Invoicing adapter.
 - `unstuck/scenarios.py`: fictional workspace and invoice fixtures.
 - `unstuck/templates/`, `unstuck/static/`: interface.
