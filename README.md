@@ -4,6 +4,8 @@ Unstuck helps a freelancer manage the money side of client work: what's stuck, w
 
 **Live demo:** https://unstuck-demo.fly.dev (create an account with any email; no mail is sent). The first visit after idle can take a few seconds to wake.
 
+**Demo video (2:08):** https://youtu.be/z6PSSjBNtcw
+
 **This is a sandbox prototype.** Clients, emails, contracts, rate cards and work records are fictional, seeded text. PayPal operations use Sandbox. The app does not read a real mailbox or send correspondence: it prepares Gmail/default-mail compose links, the user sends from their own email app, and replies are pasted back. The simulated client inbox is an alternative for the demo. No recovered revenue or real customer outcome is claimed.
 
 ## What you can do

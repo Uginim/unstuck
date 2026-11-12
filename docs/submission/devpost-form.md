@@ -44,7 +44,10 @@ https://github.com/Uginim/unstuck
 
 **Image gallery**: upload from `docs/submission/images/` (screenshots taken from the recorded demo).
 
-**Video demo link**: the YouTube URL after upload (public).
+**Video demo link**
+```
+https://youtu.be/z6PSSjBNtcw
+```
 
 ## 3. Additional info
 
